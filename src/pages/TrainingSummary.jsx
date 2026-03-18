@@ -1,0 +1,367 @@
+import { useState } from 'react'
+import { useApp } from '../context/AppContext'
+
+const SYS_KEY = 'basicSystemNames'
+const loadSystemNames = () => {
+  try { return JSON.parse(localStorage.getItem(SYS_KEY) || '[]') } catch { return [] }
+}
+
+export const DEFAULT_ISSUE_TYPES = ['ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน', 'การใช้งานระบบ', 'อื่นๆ']
+export const ISSUE_TYPES_KEY = 'sharedIssueTypes'
+
+export const loadIssueTypes = () => {
+  try {
+    const saved = localStorage.getItem(ISSUE_TYPES_KEY)
+    return saved ? JSON.parse(saved) : DEFAULT_ISSUE_TYPES
+  } catch { return DEFAULT_ISSUE_TYPES }
+}
+export const saveIssueTypes = (types) => localStorage.setItem(ISSUE_TYPES_KEY, JSON.stringify(types))
+
+const SEVERITY = [
+  { value: 'low', label: 'ต่ำ', color: '#16a34a', bg: '#f0fdf4' },
+  { value: 'medium', label: 'ปานกลาง', color: '#d97706', bg: '#fffbeb' },
+  { value: 'high', label: 'สูง', color: '#dc2626', bg: '#fef2f2' },
+]
+const STATUS_OPT = [
+  { value: 'open', label: 'รอแก้ไข', color: '#d97706', bg: '#fffbeb' },
+  { value: 'inprogress', label: 'กำลังแก้ไข', color: '#0891b2', bg: '#eff6ff' },
+  { value: 'closed', label: 'แก้ไขแล้ว', color: '#16a34a', bg: '#f0fdf4' },
+]
+
+const EMPTY_FORM = { hospitalId: '', date: '', resolvedDate: '', systemName: '', category: '', description: '', severity: 'medium', status: 'open', resolution: '', reportedBy: '' }
+
+const formatDate = (d) => {
+  if (!d) return '-'
+  const s = String(d).slice(0, 10)
+  if (!s.includes('-')) return '-'
+  const [y, m, day] = s.split('-')
+  return `${day}/${m}/${y}`
+}
+const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
+
+export default function TrainingSummary() {
+  const { hospitals, teamMembers, trainingIssues, addTrainingIssue, updateTrainingIssue, deleteTrainingIssue } = useApp()
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState(null)
+  const [filterHosp, setFilterHosp] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+
+  const [systemNames] = useState(loadSystemNames)
+
+  // Issue type management
+  const [issueTypes, setIssueTypes] = useState(loadIssueTypes)
+  const [showTypeMgr, setShowTypeMgr] = useState(false)
+  const [newType, setNewType] = useState('')
+  const [editTypeIdx, setEditTypeIdx] = useState(null)
+  const [editTypeVal, setEditTypeVal] = useState('')
+
+  const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!form.hospitalId || !form.description || !form.date) return alert('กรุณากรอกข้อมูลให้ครบถ้วน')
+    if (editId) {
+      await updateTrainingIssue(editId, { ...form, id: editId })
+    } else {
+      await addTrainingIssue(form)
+    }
+    setForm(EMPTY_FORM)
+    setShowForm(false)
+    setEditId(null)
+  }
+
+  const handleEdit = (issue) => {
+    setForm({ ...issue, date: toDateStr(issue.date), resolvedDate: toDateStr(issue.resolvedDate) })
+    setEditId(issue.id)
+    setShowForm(true)
+  }
+
+  const handleDelete = async (id) => {
+    if (window.confirm('ยืนยันการลบรายการนี้?'))
+      await deleteTrainingIssue(id)
+  }
+
+  const filtered = trainingIssues.filter(i => {
+    if (filterHosp && i.hospitalId !== filterHosp) return false
+    if (filterStatus && i.status !== filterStatus) return false
+    if (filterCategory && i.category !== filterCategory) return false
+    return true
+  })
+
+  const getHospName = (id) => hospitals.find(h => String(h.id) === String(id))?.name || id
+
+  const counts = {
+    open: trainingIssues.filter(i => i.status === 'open').length,
+    inprogress: trainingIssues.filter(i => i.status === 'inprogress').length,
+    closed: trainingIssues.filter(i => i.status === 'closed').length,
+  }
+
+  // Issue type CRUD
+  const addType = () => {
+    const trimmed = newType.trim()
+    if (!trimmed) return
+    if (issueTypes.includes(trimmed)) return alert('ประเภทปัญหานี้มีอยู่แล้ว')
+    const updated = [...issueTypes, trimmed]
+    setIssueTypes(updated)
+    saveIssueTypes(updated)
+    setNewType('')
+  }
+
+  const deleteType = (idx) => {
+    if (!window.confirm(`ลบประเภทปัญหา "${issueTypes[idx]}" ?`)) return
+    const updated = issueTypes.filter((_, i) => i !== idx)
+    setIssueTypes(updated)
+    saveIssueTypes(updated)
+  }
+
+  const startEditType = (idx) => {
+    setEditTypeIdx(idx)
+    setEditTypeVal(issueTypes[idx])
+  }
+
+  const saveEditType = () => {
+    const trimmed = editTypeVal.trim()
+    if (!trimmed) return
+    if (issueTypes.includes(trimmed) && issueTypes[editTypeIdx] !== trimmed) return alert('ประเภทปัญหานี้มีอยู่แล้ว')
+    const updated = issueTypes.map((t, i) => i === editTypeIdx ? trimmed : t)
+    setIssueTypes(updated)
+    saveIssueTypes(updated)
+    setEditTypeIdx(null)
+    setEditTypeVal('')
+  }
+
+  const thStyle = { padding: '10px 14px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#374151', background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap' }
+  const tdStyle = { padding: '10px 14px', fontSize: 13, color: '#374151', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 22, color: '#1e3a5f', marginBottom: 4 }}>🎓 สรุปปัญหาการอบรม</h2>
+        <p style={{ color: '#64748b', fontSize: 13 }}>บันทึกและติดตามปัญหาที่พบระหว่างการอบรมระบบ AP/AR</p>
+      </div>
+
+      {/* Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 24 }}>
+        {[
+          { label: 'ทั้งหมด', value: trainingIssues.length, color: '#1e3a5f', bg: '#eff6ff' },
+          { label: 'รอแก้ไข', value: counts.open, color: '#d97706', bg: '#fffbeb' },
+          { label: 'กำลังแก้ไข', value: counts.inprogress, color: '#0891b2', bg: '#eff6ff' },
+          { label: 'แก้ไขแล้ว', value: counts.closed, color: '#16a34a', bg: '#f0fdf4' },
+        ].map(s => (
+          <div key={s.label} style={{ background: s.bg, borderRadius: 10, padding: '16px 20px', border: `1px solid ${s.color}22` }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 13, color: '#64748b' }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_FORM) }} style={{
+          padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
+          borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+        }}>+ เพิ่มปัญหา</button>
+        <button onClick={() => { setShowTypeMgr(true); setEditTypeIdx(null) }} style={{
+          padding: '9px 16px', background: '#f8fafc', color: '#374151', border: '1.5px solid #e2e8f0',
+          borderRadius: 8, fontSize: 13, cursor: 'pointer',
+        }}>⚙️ กำหนดประเภทปัญหา</button>
+        <select value={filterHosp} onChange={e => setFilterHosp(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุก รพ.</option>
+          {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุกสถานะ</option>
+          {STATUS_OPT.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุกประเภทปัญหา</option>
+          {issueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {(filterHosp || filterStatus || filterCategory) && (
+          <button onClick={() => { setFilterHosp(''); setFilterStatus(''); setFilterCategory('') }} style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
+            ✕ ล้างตัวกรอง
+          </button>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 13, color: '#94a3b8' }}>แสดง {filtered.length} รายการ</span>
+      </div>
+
+      {/* Issues List */}
+      {filtered.length === 0 ? (
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🎓</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>ยังไม่มีปัญหาที่บันทึกไว้</div>
+          <div style={{ fontSize: 13, marginTop: 4 }}>คลิก "+ เพิ่มปัญหา" เพื่อบันทึกปัญหาการอบรม</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {filtered.map(issue => {
+            const sev = SEVERITY.find(s => s.value === issue.severity) || SEVERITY[1]
+            const sts = STATUS_OPT.find(s => s.value === issue.status) || STATUS_OPT[0]
+            return (
+              <div key={issue.id} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '18px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span style={{ padding: '3px 10px', borderRadius: 20, background: sts.bg, color: sts.color, fontSize: 12, fontWeight: 600 }}>{sts.label}</span>
+                      <span style={{ padding: '3px 10px', borderRadius: 20, background: sev.bg, color: sev.color, fontSize: 12, fontWeight: 600 }}>ความรุนแรง: {sev.label}</span>
+                      {issue.category && <span style={{ padding: '3px 10px', borderRadius: 20, background: '#f1f5f9', color: '#64748b', fontSize: 12 }}>{issue.category}</span>}
+                      {issue.systemName && <span style={{ padding: '3px 10px', borderRadius: 20, background: '#eff6ff', color: '#1d4ed8', fontSize: 12 }}>⚙️ {issue.systemName}</span>}
+                    </div>
+                    <div style={{ fontWeight: 700, color: '#1e3a5f', fontSize: 14, marginBottom: 6 }}>🏥 {getHospName(issue.hospitalId)}</div>
+                    <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{issue.description}</div>
+                    {issue.reportedBy && <div style={{ fontSize: 12, color: '#94a3b8' }}>👤 ผู้รายงาน: {issue.reportedBy}</div>}
+                    {issue.resolution && (
+                      <div style={{ fontSize: 13, color: '#16a34a', background: '#f0fdf4', padding: '8px 12px', borderRadius: 8, marginTop: 8 }}>
+                        ✅ วิธีแก้ไข: {issue.resolution}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 2 }}>📅 พบปัญหา: {formatDate(issue.date)}</div>
+                    {issue.resolvedDate && <div style={{ fontSize: 12, color: '#16a34a', marginBottom: 8 }}>✅ แก้ไข: {formatDate(issue.resolvedDate)}</div>}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => handleEdit(issue)} style={{ padding: '5px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#1d4ed8' }}>แก้ไข</button>
+                      <button onClick={() => handleDelete(issue.id)} style={{ padding: '5px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#dc2626' }}>ลบ</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Issue Type Manager Modal */}
+      {showTypeMgr && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: '100%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <h3 style={{ color: '#1e3a5f', fontSize: 18 }}>⚙️ กำหนดประเภทปัญหา</h3>
+              <button onClick={() => { setShowTypeMgr(false); setEditTypeIdx(null) }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+            </div>
+            <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 20 }}>ประเภทปัญหาที่กำหนดจะนำไปใช้เป็นตัวเลือกในทั้งหน้าสรุปปัญหาอบรมและสรุปปัญหาขึ้นระบบ</p>
+
+            {/* Add new row */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input
+                value={newType}
+                onChange={e => setNewType(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addType() } }}
+                placeholder="ชื่อประเภทปัญหาใหม่..."
+                style={{ flex: 1, padding: '9px 12px', border: '1.5px solid #3b82f6', borderRadius: 8, fontSize: 13 }}
+              />
+              <button onClick={addType} style={{ padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
+            </div>
+
+            {/* Table */}
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyle, width: 50, textAlign: 'center' }}>ลำดับ</th>
+                    <th style={thStyle}>ชื่อประเภทปัญหา</th>
+                    <th style={{ ...thStyle, width: 140, textAlign: 'center' }}>จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {issueTypes.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8', padding: 28 }}>ยังไม่มีประเภทปัญหา</td>
+                    </tr>
+                  ) : issueTypes.map((type, idx) => (
+                    <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
+                      <td style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8', fontWeight: 600 }}>{idx + 1}</td>
+                      <td style={tdStyle}>
+                        {editTypeIdx === idx ? (
+                          <input
+                            value={editTypeVal}
+                            onChange={e => setEditTypeVal(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveEditType(); if (e.key === 'Escape') setEditTypeIdx(null) }}
+                            autoFocus
+                            style={{ width: '100%', padding: '5px 8px', border: '1.5px solid #3b82f6', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                          />
+                        ) : (
+                          <span>{type}</span>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        {editTypeIdx === idx ? (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                            <button onClick={saveEditType} style={{ padding: '4px 12px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>บันทึก</button>
+                            <button onClick={() => setEditTypeIdx(null)} style={{ padding: '4px 12px', background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                            <button onClick={() => startEditType(idx)} style={{ padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+                            <button onClick={() => deleteType(idx)} style={{ padding: '4px 12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => { setShowTypeMgr(false); setEditTypeIdx(null) }} style={{ padding: '9px 24px', background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}>ปิด</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Form Modal */}
+      {showForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ marginBottom: 20, color: '#1e3a5f', fontSize: 18 }}>🎓 {editId ? 'แก้ไข' : 'เพิ่ม'}ปัญหาการอบรม</h3>
+            <form onSubmit={handleSubmit}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 0 }}>
+                {[
+                  { label: 'โรงพยาบาล *', type: 'select', key: 'hospitalId', options: hospitals.map(h => ({ value: h.id, label: h.name })), span2: true },
+                  { label: 'วันที่พบปัญหา *', type: 'date', key: 'date' },
+                  { label: 'วันที่แก้ไข', type: 'date', key: 'resolvedDate' },
+                  { label: 'ผู้รายงาน', type: 'select', key: 'reportedBy', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
+                  { label: 'ระบบงาน', type: 'select', key: 'systemName', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
+                  { label: 'ประเภทปัญหา', type: 'select', key: 'category', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
+                  { label: 'ความรุนแรง', type: 'select', key: 'severity', options: SEVERITY.map(s => ({ value: s.value, label: s.label })) },
+                  { label: 'สถานะ', type: 'select', key: 'status', options: STATUS_OPT.map(s => ({ value: s.value, label: s.label })), span2: true },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: 14, gridColumn: f.span2 ? 'span 2' : 'span 1' }}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5 }}>{f.label}</label>
+                    {f.type === 'select' ? (
+                      <select value={form[f.key]} onChange={set(f.key)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+                        {f.nullable && <option value="">-- เลือก --</option>}
+                        {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    ) : (
+                      <input type={f.type} value={form[f.key]} onChange={set(f.key)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5 }}>รายละเอียดปัญหา *</label>
+                <textarea value={form.description} onChange={set('description')} rows={3} placeholder="อธิบายปัญหาที่พบ..."
+                  style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5 }}>วิธีแก้ไข / ผลการดำเนินการ</label>
+                <textarea value={form.resolution} onChange={set('resolution')} rows={2} placeholder="กรอกวิธีแก้ไขหรือผลการดำเนินการ..."
+                  style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="submit" style={{ flex: 1, padding: '11px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  {editId ? 'บันทึกการแก้ไข' : 'เพิ่มปัญหา'}
+                </button>
+                <button type="button" onClick={() => { setShowForm(false); setEditId(null) }} style={{ flex: 1, padding: '11px', background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}>ยกเลิก</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
