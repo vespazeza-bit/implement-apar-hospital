@@ -7,9 +7,9 @@ app.use(cors())
 app.use(express.json())
 
 const pool = mysql.createPool({
-  host: 'localhost', port: 3306,
-  user: 'vespazeza', password: '64120482',
-  database: 'acc_system_setup', charset: 'utf8mb4',
+  host: process.env.DB_HOST || 'localhost', port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || 'vespazeza', password: process.env.DB_PASS || '64120482',
+  database: process.env.DB_NAME || 'acc_system_setup', charset: 'utf8mb4',
   waitForConnections: true, connectionLimit: 10,
   dateStrings: true,   // คืนค่า DATE/DATETIME เป็น string 'YYYY-MM-DD' แทน Date object
 })

@@ -29,6 +29,12 @@ services:
       dockerfile: Dockerfile
     container_name: apar_backend
     restart: always
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: vespazeza
+      DB_PASS: 64120482
+      DB_NAME: acc_system_setup
     ports:
       - "3001:3001"
     depends_on:
