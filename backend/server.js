@@ -12,7 +12,7 @@ app.use(express.static(path.join(__dirname, '../dist')))
 
 const pool = mysql.createPool({
   host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
-  port: Number(process.env.MYSQLPORT || process.env.DB_PORT) || 3306,
+  port: Number(process.env.MYSQLPORT || process.env.DB_PORT) || 3307,
   user: process.env.MYSQLUSER || process.env.DB_USER || 'vespazeza',
   password: process.env.MYSQLPASSWORD || process.env.DB_PASS || '64120482',
   database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'acc_system_setup',
@@ -1026,7 +1026,7 @@ async function runMigrations() {
 }
 
 // ─── SPA fallback (ต้องอยู่หลัง API routes ทั้งหมด) ──────────────────────────
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'))
 })
 
