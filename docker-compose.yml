@@ -24,9 +24,7 @@ services:
 
   # ── Backend (Express.js) ────────────────────────────────────────────────────
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: hub.hosxp.net/bms/apar-backend:latest
     container_name: apar_backend
     restart: always
     environment:
@@ -43,9 +41,7 @@ services:
 
   # ── Frontend (React + Nginx) ────────────────────────────────────────────────
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+    image: hub.hosxp.net/bms/apar-frontend:latest
     container_name: apar_frontend
     restart: always
     ports:
