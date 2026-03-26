@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "vite",
+    "start": "node backend/server.js",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
@@ -13,7 +13,10 @@
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "express": "^5.2.1",
+    "cors": "^2.8.6",
+    "mysql2": "^3.19.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

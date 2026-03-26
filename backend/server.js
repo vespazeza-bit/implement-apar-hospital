@@ -1,15 +1,22 @@
 const express = require('express')
 const mysql = require('mysql2/promise')
 const cors = require('cors')
+const path = require('path')
 
 const app = express()
 app.use(cors())
 app.use(express.json())
 
+// Serve React frontend (production build)
+app.use(express.static(path.join(__dirname, '../dist')))
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost', port: Number(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'vespazeza', password: process.env.DB_PASS || '64120482',
-  database: process.env.DB_NAME || 'acc_system_setup', charset: 'utf8mb4',
+  host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
+  port: Number(process.env.MYSQLPORT || process.env.DB_PORT) || 3306,
+  user: process.env.MYSQLUSER || process.env.DB_USER || 'vespazeza',
+  password: process.env.MYSQLPASSWORD || process.env.DB_PASS || '64120482',
+  database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'acc_system_setup',
+  charset: 'utf8mb4',
   waitForConnections: true, connectionLimit: 10,
   dateStrings: true,   // คืนค่า DATE/DATETIME เป็น string 'YYYY-MM-DD' แทน Date object
 })
@@ -1018,7 +1025,13 @@ async function runMigrations() {
   }
 }
 
+// ─── SPA fallback (ต้องอยู่หลัง API routes ทั้งหมด) ──────────────────────────
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'))
+})
+
 // ─── Start ────────────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3001
 runMigrations().then(() => {
-  app.listen(3001, () => console.log('✅ API Server รันที่ http://localhost:3001'))
+  app.listen(PORT, () => console.log(`✅ API Server รันที่ port ${PORT}`))
 })
