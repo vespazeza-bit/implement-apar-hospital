@@ -723,10 +723,10 @@ app.post('/api/masterplan-items', async (req, res) => {
 
 app.put('/api/masterplan-items/:id', async (req, res) => {
   try {
-    const { topicTitle, startDate, endDate, startTime, endTime, taskDetail, responsible, hospitalResponsible, preparation, status } = req.body
+    const { topicTitle, startDate, endDate, startTime, endTime, taskDetail, responsible, hospitalResponsible, preparation, status, sortOrder } = req.body
     await pool.query(
-      'UPDATE masterplan_items SET topic_title=?,start_date=?,end_date=?,start_time=?,end_time=?,task_detail=?,responsible=?,hospital_responsible=?,preparation=?,status=? WHERE id=?',
-      [topicTitle || '', startDate || null, endDate || null, startTime || '', endTime || '', taskDetail || '', responsible || '', hospitalResponsible || '', preparation || '', status || 'pending', req.params.id])
+      'UPDATE masterplan_items SET topic_title=?,start_date=?,end_date=?,start_time=?,end_time=?,task_detail=?,responsible=?,hospital_responsible=?,preparation=?,status=?,sort_order=? WHERE id=?',
+      [topicTitle || '', startDate || null, endDate || null, startTime || '', endTime || '', taskDetail || '', responsible || '', hospitalResponsible || '', preparation || '', status || 'pending', nn(sortOrder) ?? 0, req.params.id])
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

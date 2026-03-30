@@ -62,7 +62,8 @@ export default function ProjectSummary() {
   const [filterProvince, setFilterProvince] = useState('')
   const [filterHospital, setFilterHospital] = useState('')
   const [filterPlanStatus, setFilterPlanStatus] = useState('')
-  const [filterYear, setFilterYear] = useState('')
+  const [filterYear, setFilterYear] = useState(String(new Date().getFullYear() + 543))
+  const [limit, setLimit] = useState(30)
 
   const provinces = [...new Set(hospitals.map(h => h.province).filter(Boolean))].sort()
 
@@ -96,6 +97,8 @@ export default function ProjectSummary() {
     if (filterYear && !hasPlansInYear(h.id, filterYear)) return false
     return true
   })
+
+  const displayed = filtered.slice(0, limit)
 
   const overallStats = filtered.map(h => {
     const b = getProgress('basic', h.id)
@@ -169,9 +172,14 @@ export default function ProjectSummary() {
             borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b', whiteSpace: 'nowrap',
           }}>✕ ล้างตัวกรอง</button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>
-          แสดง {filtered.length} / {hospitals.length} รพ.
-        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>แสดง</span>
+          <select value={limit} onChange={e => setLimit(Number(e.target.value))}
+            style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+            {[10, 20, 30, 50, 100, 999].map(n => <option key={n} value={n}>{n === 999 ? 'ทั้งหมด' : n}</option>)}
+          </select>
+          <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>จาก {filtered.length} รพ.</span>
+        </div>
       </div>
 
       {/* Table */}
@@ -190,7 +198,7 @@ export default function ProjectSummary() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((hosp, idx) => {
+              {displayed.map((hosp, idx) => {
                 const b = getProgress('basic', hosp.id)
                 const f = getProgress('form', hosp.id)
                 const r = getProgress('report', hosp.id)

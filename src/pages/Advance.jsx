@@ -49,7 +49,7 @@ const LS = { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', 
 const IS = { width: '100%', padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }
 
 export default function Advance() {
-  const { hospitals, projectPlans } = useApp()
+  const { hospitals, projectPlans, updatePlan } = useApp()
   const [records, setRecords] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -59,6 +59,7 @@ export default function Advance() {
   const [filterInstallType, setFilterInstallType] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
+  const [limit, setLimit] = useState(30)
 
   // โหลดข้อมูลจาก API
   useEffect(() => {
@@ -121,6 +122,11 @@ export default function Advance() {
     } else {
       const res = await api.post('/advance-records', form)
       setRecords(prev => [res, ...prev])
+      // อัปเดตสถานะโครงการเป็น "จัดทำ Adv" อัตโนมัติ ถ้าสถานะยังไม่ถึงขั้นนั้น
+      const plan = projectPlans.find(p => String(p.id) === String(form.planId))
+      if (plan && ['waiting', 'planning'].includes(plan.status)) {
+        await updatePlan(plan.id, { ...plan, status: 'advance' })
+      }
     }
     setShowForm(false)
   }
@@ -160,16 +166,19 @@ export default function Advance() {
   const getInstallType = (planId) =>
     projectPlans.find(p => String(p.id) === String(planId))?.installType || ''
 
-  const filtered = records.filter(r => {
-    if (filterStatus && r.status !== filterStatus) return false
-    if (filterInstallType && getInstallType(r.planId) !== filterInstallType) return false
-    if (filterDateFrom && r.advDate && r.advDate < filterDateFrom) return false
-    if (filterDateTo && r.advDate && r.advDate > filterDateTo) return false
-    return true
-  })
+  const filtered = records
+    .filter(r => {
+      if (filterStatus && r.status !== filterStatus) return false
+      if (filterInstallType && getInstallType(r.planId) !== filterInstallType) return false
+      if (filterDateFrom && r.advDate && r.advDate < filterDateFrom) return false
+      if (filterDateTo && r.advDate && r.advDate > filterDateTo) return false
+      return true
+    })
+    .sort((a, b) => (b.advDate || '').localeCompare(a.advDate || ''))
 
   const totalAmount = filtered.reduce((s, r) => s + (Number(r.amount) || 0), 0)
   const totalActual = filtered.reduce((s, r) => s + (Number(r.actualAmount) || 0), 0)
+  const displayed = filtered.slice(0, limit)
 
   const selectedPlan = projectPlans.find(p => String(p.id) === form.planId)
 
@@ -243,12 +252,19 @@ export default function Advance() {
               ✕ ล้างตัวกรอง
             </button>
           )}
-          <span style={{ marginLeft: 'auto', fontSize: 13, color: '#94a3b8', alignSelf: 'flex-end' }}>แสดง {filtered.length} รายการ</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-end' }}>
+            <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>แสดง</span>
+            <select value={limit} onChange={e => setLimit(Number(e.target.value))}
+              style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+              {[10, 20, 30, 50, 100, 999].map(n => <option key={n} value={n}>{n === 999 ? 'ทั้งหมด' : n}</option>)}
+            </select>
+            <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>จาก {filtered.length} รายการ</span>
+          </div>
         </div>
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {displayed.length === 0 ? (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>⚙️</div>
           <div style={{ fontSize: 16, fontWeight: 600 }}>ยังไม่มีรายการ Advance</div>
@@ -266,7 +282,7 @@ export default function Advance() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((rec, idx) => {
+                {displayed.map((rec, idx) => {
                   const diff = getDiff(rec.amount, rec.actualAmount)
                   const checkedDocs = (rec.documents || []).filter(d => d.checked).length
                   const totalDocs = (rec.documents || []).length
@@ -347,7 +363,7 @@ export default function Advance() {
                   <label style={LS}>1. โครงการ <span style={{ color: '#dc2626' }}>*</span></label>
                   <select value={form.planId} onChange={handleSelectPlan} style={IS} required>
                     <option value="">-- เลือกโครงการ --</option>
-                    {projectPlans.map(p => {
+                    {projectPlans.filter(p => p.status !== 'deliver' && p.status !== 'closed').map(p => {
                       const hosp = hospitals.find(h => String(h.id) === String(p.hospitalId))
                       return <option key={p.id} value={p.id}>{p.projectName}{hosp ? ` – ${hosp.name}` : ''}</option>
                     })}
