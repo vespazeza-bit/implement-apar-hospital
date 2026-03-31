@@ -276,7 +276,6 @@ export default function Calendar() {
               style={{ padding: '8px 14px', border: '1.5px solid #1e3a5f', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#1e3a5f', background: '#eff6ff', cursor: 'pointer', minWidth: 190 }}
             >
               <option value="project">📋 ตามโครงการ (ทั้งหมด)</option>
-              <option value="ติดตั้งระบบ">🔧 ติดตั้งระบบ</option>
               <option value="เข้า Revisit">🔄 เข้า Revisit</option>
               <option value="เข้า Office">🏢 เข้า Office</option>
               <option value="person">👤 ตามรายคน</option>
@@ -437,18 +436,38 @@ export default function Calendar() {
               </div>
             ) : rows.map(row => {
               const nPlans = row.plans.length
-              const dynamicH = Math.max(ROW_H, nPlans > 1 ? nPlans * 30 + 10 : ROW_H)
+              const compactMode = viewBy === 'person' && timeRange === 'year'
+              const rowUnit = compactMode ? 35 : 30
+              const minH = compactMode ? 38 : ROW_H
+
+              // Lane-packing: assign non-overlapping plans to same lane
+              const laneMap = new Map() // plan.id -> lane index
+              if (compactMode) {
+                const laneEnds = []
+                const sorted = [...row.plans].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+                sorted.forEach(plan => {
+                  const s = plan.startDate || ''
+                  const lane = laneEnds.findIndex(end => s > end)
+                  const l = lane === -1 ? laneEnds.length : lane
+                  laneEnds[l] = plan.endDate || plan.startDate || ''
+                  laneMap.set(plan.id, l)
+                })
+              } else {
+                row.plans.forEach((plan, i) => laneMap.set(plan.id, i))
+              }
+              const numLanes = compactMode ? Math.max(1, ...[...laneMap.values()].map(l => l + 1)) : nPlans
+              const dynamicH = Math.max(minH, numLanes > 1 ? numLanes * rowUnit + 6 : minH)
               return (
                 <div key={row.key} style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', minHeight: dynamicH, alignItems: 'stretch' }}>
                   {/* Label */}
-                  <div style={{ width: LABEL_W, minWidth: LABEL_W, padding: '8px 16px', borderRight: '2px solid #e2e8f0', background: viewBy === 'person' ? '#fdfeff' : '#fafffe', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+                  <div style={{ position: 'sticky', left: 0, zIndex: 10, width: LABEL_W, minWidth: LABEL_W, padding: compactMode ? '4px 16px' : '8px 16px', borderRight: '2px solid #e2e8f0', background: viewBy === 'person' ? '#fdfeff' : '#fafffe', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
                     <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</div>
                     {row.sub1 && <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub1}</div>}
                     {row.sub2 && <div style={{ fontSize: 11, color: '#0891b2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub2}</div>}
                   </div>
 
                   {/* Bar area */}
-                  <div style={{ position: 'relative', flex: 1, minHeight: dynamicH }}>
+                  <div style={{ position: 'relative', flex: 1, minHeight: dynamicH, overflow: 'hidden' }}>
                     {/* Weekend bg */}
                     {timeRange === 'month' && days.map(d => isWeekend(d) && (
                       <div key={d} style={{ position: 'absolute', left: (d - 1) * DAY_W, top: 0, width: DAY_W, height: '100%', background: 'rgba(254,243,199,0.4)', pointerEvents: 'none' }} />
@@ -469,9 +488,10 @@ export default function Calendar() {
                     {/* Bars */}
                     {row.plans.map((plan, pi) => {
                       const sc = STATUS_COLORS[plan.status] || '#059669'
-                      const slotH = nPlans > 1 ? Math.floor((dynamicH - 10) / nPlans) : dynamicH - 12
-                      const barTop = 6 + pi * (nPlans > 1 ? slotH + 2 : 0)
-                      const barH = slotH - 4
+                      const lane = laneMap.get(plan.id) ?? pi
+                      const slotH = numLanes > 1 ? rowUnit - 2 : dynamicH - 12
+                      const barTop = (compactMode ? 3 : 6) + lane * (numLanes > 1 ? rowUnit : 0)
+                      const barH = Math.max(12, slotH - (compactMode ? 3 : 4))
 
                       const bar = getBar(plan.startDate, plan.endDate)
                       const r1 = plan.revisit1 ? getBar(plan.revisit1, plan.revisit1) : null
@@ -488,7 +508,7 @@ export default function Calendar() {
 
                       const barLabel = viewBy === 'person'
                         ? `${plan.projectName}${plan.hospitalName ? ` (${plan.hospitalName})` : ''}`
-                        : viewMode === 'project' && timeRange === 'year'
+                        : (viewMode === 'project' || viewMode === 'เข้า Revisit' || viewMode === 'เข้า Office')
                           ? getTeamNicknames(plan)
                           : `${plan.projectName}${plan.siteOwner ? ` · ${plan.siteOwner}` : ''}`
 

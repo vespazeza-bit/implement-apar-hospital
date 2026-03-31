@@ -42,6 +42,7 @@ export default function SystemSummary() {
   const [filterHosp, setFilterHosp] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+  const [limit, setLimit] = useState(30)
 
   const [systemNames] = useState(loadSystemNames)
   // Read shared issue types (managed from TrainingSummary page)
@@ -78,7 +79,9 @@ export default function SystemSummary() {
     if (filterStatus && i.status !== filterStatus) return false
     if (filterCategory && i.category !== filterCategory) return false
     return true
-  })
+  }).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''))
+
+  const displayed = filtered.slice(0, limit)
 
   const getHospName = (id) => hospitals.find(h => String(h.id) === String(id))?.name || id
 
@@ -128,7 +131,14 @@ export default function SystemSummary() {
             ✕ ล้างตัวกรอง
           </button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 13, color: '#94a3b8' }}>แสดง {filtered.length} รายการ</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>แสดง</span>
+          <select value={limit} onChange={e => setLimit(Number(e.target.value))}
+            style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
+            {[10, 20, 30, 50, 100, 999].map(n => <option key={n} value={n}>{n === 999 ? 'ทั้งหมด' : n}</option>)}
+          </select>
+          <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>จาก {filtered.length} รายการ</span>
+        </div>
       </div>
 
       {/* Issues */}
@@ -140,7 +150,7 @@ export default function SystemSummary() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map(issue => {
+          {displayed.map(issue => {
             const pri = PRIORITY.find(p => p.value === issue.priority) || PRIORITY[1]
             const sts = STATUS_OPT.find(s => s.value === issue.status) || STATUS_OPT[0]
             return (
