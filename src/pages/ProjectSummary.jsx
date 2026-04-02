@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import SearchableSelect from '../components/SearchableSelect'
 
 const ADV_STATUS = [
   { value: 'pending',         label: 'ยังไม่ดำเนินการ', color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' },
@@ -144,14 +145,10 @@ export default function ProjectSummary() {
           <option value="">-- ทุกจังหวัด --</option>
           {provinces.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={filterHospital} onChange={e => setFilterHospital(e.target.value)} style={{
-          padding: '6px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8,
-          fontSize: 13, background: '#f8fafc', cursor: 'pointer', minWidth: 220,
-        }}>
-          <option value="">-- ทุกโรงพยาบาล --</option>
-          {(filterProvince ? hospitals.filter(h => h.province === filterProvince) : hospitals)
-            .map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+        <SearchableSelect value={String(filterHospital || '')} onChange={setFilterHospital}
+          options={(filterProvince ? hospitals.filter(h => h.province === filterProvince) : hospitals)
+            .map(h => ({ value: String(h.id), label: h.name }))}
+          allLabel="-- ทุกโรงพยาบาล --" style={{ minWidth: 220 }} />
         <select value={filterYear} onChange={e => setFilterYear(e.target.value)} style={{
           padding: '6px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8,
           fontSize: 13, background: '#f8fafc', cursor: 'pointer', minWidth: 130,

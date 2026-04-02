@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
+import SearchableSelect from '../components/SearchableSelect'
 
 // Rule-based recommendations per category
 const RECOMMENDATIONS = {
@@ -328,11 +329,10 @@ ${a.preventionPlan.map(p => `<tr><td>${p.category}</td><td>${p.count} ครั�
             {/* Selector */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>เลือกโรงพยาบาล:</span>
-              <select value={selectedHosp} onChange={e => setSelectedHosp(e.target.value)}
-                style={{ padding: '9px 16px', border: '1.5px solid #3b82f6', borderRadius: 8, fontSize: 14, minWidth: 240 }}>
-                <option value="">-- เลือก รพ. --</option>
-                {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-              </select>
+              <SearchableSelect value={String(selectedHosp || '')} onChange={setSelectedHosp}
+                options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+                placeholder="-- เลือก รพ. --" style={{ minWidth: 240 }}
+                inputStyle={{ padding: '9px 16px', border: '1.5px solid #3b82f6', fontSize: 14 }} />
               {selectedHosp && hospIssues.combined.length > 0 && (
                 <button onClick={exportTab1Word} style={{
                   padding: '9px 20px', background: '#1e40af', color: '#fff', border: 'none',

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import SearchableSelect from '../components/SearchableSelect'
 import DateInput from '../components/DateInput'
 
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -605,10 +606,10 @@ export default function Calendar() {
                     </div>
                     <div>
                       <label style={LS}>โรงพยาบาล *</label>
-                      <select value={editForm.hospitalId} onChange={setEF('hospitalId')} style={IS} required>
-                        <option value="">-- เลือกโรงพยาบาล --</option>
-                        {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-                      </select>
+                      <SearchableSelect value={String(editForm.hospitalId || '')}
+                        onChange={v => setEditForm(p => ({ ...p, hospitalId: v }))}
+                        options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+                        placeholder="-- เลือกโรงพยาบาล --" style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={LS}>เจ้าของไซต์</label>

@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api'
 import DateInput from '../components/DateInput'
+import SearchableSelect from '../components/SearchableSelect'
 
 
 const PROJECT_STATUS = [
@@ -217,10 +218,9 @@ export default function WorkPlan() {
           <option value="">ทุกปี</option>
           {availableYears.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
         </select>
-        <select value={filterHosp} onChange={e => setFilterHosp(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุก รพ.</option>
-          {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+        <SearchableSelect value={String(filterHosp || '')} onChange={setFilterHosp}
+          options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+          allLabel="ทุก รพ." style={{ minWidth: 200 }} />
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
           <option value="">ทุกสถานะ</option>
           {PROJECT_STATUS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -384,10 +384,10 @@ export default function WorkPlan() {
                     </div>
                     <div>
                       <label style={LS}>โรงพยาบาล *</label>
-                      <select value={form.hospitalId} onChange={set('hospitalId')} style={IS} required>
-                        <option value="">-- เลือกโรงพยาบาล --</option>
-                        {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-                      </select>
+                      <SearchableSelect value={String(form.hospitalId || '')}
+                        onChange={v => setForm(p => ({ ...p, hospitalId: v }))}
+                        options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+                        placeholder="-- เลือกโรงพยาบาล --" style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={LS}>เจ้าของไซต์</label>
@@ -848,42 +848,54 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
     const hospName = selPlan ? (hospitals.find(h => String(h.id) === String(selPlan.hospitalId))?.name || '') : ''
     const projectName = selPlan?.projectName || ''
 
-    // วันที่/เวลา รวมในช่องเดียว
-    const buildDateTime = (row) => {
-      const dateStr = row.startDate
-        ? formatDate(row.startDate) + (row.endDate && row.endDate !== row.startDate ? ` – ${formatDate(row.endDate)}` : '')
-        : ''
-      const timeStr = row.startTime
-        ? row.startTime + (row.endTime ? ` – ${row.endTime} น.` : ' น.')
-        : ''
-      return [dateStr, timeStr].filter(Boolean).join('\n')
+    const THAI_MON_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+    const fmtD = (d) => {
+      if (!d) return ''
+      const s = String(d).slice(0, 10)
+      if (!s.includes('-')) return ''
+      const [y, m, day] = s.split('-')
+      return `${day} ${THAI_MON_SHORT[parseInt(m, 10) - 1]} ${parseInt(y, 10) + 543}`
     }
-
-    // หัวข้อ + รายละเอียดงาน บรรทัดถัดไป
+    const fmtDateRow = (row) => {
+      if (!row.startDate) return ''
+      const d1 = fmtD(row.startDate)
+      const d2 = row.endDate && row.endDate !== row.startDate ? fmtD(row.endDate) : ''
+      return d2 ? `${d1} – ${d2}` : d1
+    }
+    const buildTime = (row) => row.startTime
+      ? row.startTime + (row.endTime ? ` – ${row.endTime} น.` : ' น.')
+      : ''
     const buildTopic = (row) => {
       const topic = row.topicTitle || ''
       const detail = (row.taskDetail || '').trim()
-      if (!detail) return topic
-      // รายละเอียดอาจมีหลายบรรทัดอยู่แล้ว (newline-separated)
-      return topic + '\n' + detail
+      return [topic, detail].filter(Boolean).join('\n')
     }
-
-    // ผู้รับผิดชอบ แยกแต่ละคนต่างบรรทัด
     const buildResponsible = (val) =>
-      (val || '').split(',').map(s => s.trim()).filter(Boolean).join('\n')
+      (val || '').split(',').map(s => s.trim()).filter(Boolean).map(s => `คุณ${s}`).join('\n')
 
-    const headers = ['วันที่/เวลา', 'หัวข้อ / รายละเอียดงาน', 'ผู้รับผิดชอบ', 'ผู้รับผิดชอบ รพ.', 'การเตรียมความพร้อม']
-    const rows = saved.map(row => [
-      buildDateTime(row),
-      buildTopic(row),
-      buildResponsible(row.responsible),
-      row.hospitalResponsible || '',
-      row.preparation || '',
-    ])
+    const headers = ['วันที่ / เวลา', 'รายละเอียดงาน', 'ผู้รับผิดชอบ BMS', 'ผู้รับผิดชอบ รพ.', 'การเตรียมความพร้อม']
 
-    // escape: ใส่ " ครอบ และ newline ภายใน cell ใช้ \n (Excel รองรับใน quoted cell)
+    // กลุ่มตามวันที่: แถว date header แยก + แถวเวลา/รายละเอียด
+    const allRows = []
+    let lastDateKey = null
+    saved.forEach(row => {
+      const dateKey = row.startDate || ''
+      const dateLabel = fmtDateRow(row)
+      if (dateLabel && dateKey !== lastDateKey) {
+        allRows.push([dateLabel, '', '', '', ''])
+        lastDateKey = dateKey
+      }
+      allRows.push([
+        buildTime(row),
+        buildTopic(row),
+        buildResponsible(row.responsible),
+        row.hospitalResponsible || '',
+        row.preparation || '',
+      ])
+    })
+
     const escape = (v) => `"${String(v).replace(/"/g, '""')}"`
-    const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\r\n')
+    const csv = [headers, ...allRows].map(r => r.map(escape).join(',')).join('\r\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

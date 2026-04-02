@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { loadIssueTypes } from './TrainingSummary'
+import SearchableSelect from '../components/SearchableSelect'
 
 const SYS_KEY = 'basicSystemNames'
 const loadSystemNames = () => {
@@ -114,10 +115,9 @@ export default function SystemSummary() {
           padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
           borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
         }}>+ รายงานปัญหา</button>
-        <select value={filterHosp} onChange={e => setFilterHosp(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุก รพ.</option>
-          {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+        <SearchableSelect value={filterHosp} onChange={setFilterHosp}
+          options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+          allLabel="ทุก รพ." style={{ minWidth: 200 }} />
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
           <option value="">ทุกสถานะ</option>
           {STATUS_OPT.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -195,7 +195,7 @@ export default function SystemSummary() {
             <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 {[
-                  { label: 'โรงพยาบาล *', key: 'hospitalId', type: 'select', options: hospitals.map(h => ({ value: h.id, label: h.name })) },
+                  { label: 'โรงพยาบาล *', key: 'hospitalId', type: 'hospSearch' },
                   { label: 'วันที่พบปัญหา *', key: 'reportDate', type: 'date' },
                   { label: 'วันที่แก้ไข', key: 'resolvedDate', type: 'date' },
                   { label: 'ผู้รายงาน', key: 'reportedBy', type: 'select', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
@@ -206,7 +206,13 @@ export default function SystemSummary() {
                 ].map(f => (
                   <div key={f.key} style={{ gridColumn: f.key === 'hospitalId' || f.key === 'status' ? 'span 2' : 'span 1' }}>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{f.label}</label>
-                    {f.type === 'select' ? (
+                    {f.type === 'hospSearch' ? (
+                      <SearchableSelect value={String(form[f.key] || '')}
+                        onChange={v => setForm(p => ({ ...p, [f.key]: v }))}
+                        options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+                        placeholder="-- เลือก รพ. --"
+                        style={{ width: '100%' }} />
+                    ) : f.type === 'select' ? (
                       <select value={form[f.key]} onChange={set(f.key)} style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
                         {f.nullable && <option value="">-- เลือก --</option>}
                         {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

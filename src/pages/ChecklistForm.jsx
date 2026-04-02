@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '../context/AppContext'
 import { api } from '../api'
+import SearchableSelect from '../components/SearchableSelect'
 
 const SYS_KEY = 'basicSystemNames'
 const PAPER_SIZES = ['A4', 'A5']
@@ -205,10 +206,9 @@ export default function ChecklistForm() {
                 📥 Export Excel
               </button>
             )}
-            <select value={checkHosp} onChange={e => setCheckHosp(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 220 }}>
-              <option value="">-- เลือกโรงพยาบาล --</option>
-              {hospitals.map(h => <option key={h.id} value={String(h.id)}>{h.name}</option>)}
-            </select>
+            <SearchableSelect value={String(checkHosp || '')} onChange={setCheckHosp}
+              options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+              placeholder="-- เลือกโรงพยาบาล --" style={{ minWidth: 220 }} />
             {checkHosp && (() => {
               const total = entries.length
               const done = entries.filter(e => e.status === 'done').length
@@ -398,11 +398,10 @@ export default function ChecklistForm() {
 
             <div style={{ padding: '16px 28px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>เลือกโรงพยาบาล *</label>
-              <select value={importHosp} onChange={e => handleImportHospChange(e.target.value)}
-                style={{ flex: 1, minWidth: 200, padding: '8px 12px', border: '1.5px solid #3b82f6', borderRadius: 8, fontSize: 13 }}>
-                <option value="">-- เลือกโรงพยาบาล --</option>
-                {hospitals.map(h => <option key={h.id} value={String(h.id)}>{h.name}</option>)}
-              </select>
+              <SearchableSelect value={String(importHosp || '')} onChange={handleImportHospChange}
+                options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+                placeholder="-- เลือกโรงพยาบาล --" style={{ flex: 1, minWidth: 200 }}
+                inputStyle={{ border: '1.5px solid #3b82f6' }} />
               {importHosp && (
                 <button type="button" onClick={() => handleImportHospChange(importHosp)} style={{ padding: '8px 14px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   🔄 โหลดรายการ

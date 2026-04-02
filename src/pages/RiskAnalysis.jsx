@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useApp } from '../context/AppContext'
+import SearchableSelect from '../components/SearchableSelect'
 
 // ─── Risk config ─────────────────────────────────────────────────────────────
 
@@ -260,11 +261,9 @@ export default function RiskAnalysis() {
               <option value="">ทุกปี พ.ศ.</option>
               {allYears.map(y => <option key={y} value={y}>ปี {y}</option>)}
             </select>
-            <select value={filterOverviewHosp} onChange={e => setFilterOverviewHosp(e.target.value)}
-              style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 200 }}>
-              <option value="">ทุก รพ.</option>
-              {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-            </select>
+            <SearchableSelect value={filterOverviewHosp} onChange={setFilterOverviewHosp}
+              options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+              allLabel="ทุก รพ." style={{ minWidth: 200 }} />
             {(filterOverviewYear !== currentBEYear || filterOverviewHosp) && (
               <button onClick={() => { setFilterOverviewYear(currentBEYear); setFilterOverviewHosp('') }}
                 style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
@@ -324,11 +323,9 @@ export default function RiskAnalysis() {
               <option value="">ทุกปี พ.ศ.</option>
               {allYears.map(y => <option key={y} value={y}>ปี {y}</option>)}
             </select>
-            <select value={filterHosp} onChange={e => setFilterHosp(e.target.value)}
-              style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 220 }}>
-              <option value="">ทุก รพ.</option>
-              {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-            </select>
+            <SearchableSelect value={filterHosp} onChange={setFilterHosp}
+              options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+              allLabel="ทุก รพ." style={{ minWidth: 220 }} />
             {(filterHospYear !== currentBEYear || filterHosp) && (
               <button onClick={() => { setFilterHospYear(currentBEYear); setFilterHosp('') }}
                 style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
@@ -414,11 +411,9 @@ export default function RiskAnalysis() {
               <option value="">ทุกปี พ.ศ.</option>
               {allYears.map(y => <option key={y} value={y}>ปี {y}</option>)}
             </select>
-            <select value={filterCatHosp} onChange={e => setFilterCatHosp(e.target.value)}
-              style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 200 }}>
-              <option value="">ทุก รพ.</option>
-              {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-            </select>
+            <SearchableSelect value={filterCatHosp} onChange={setFilterCatHosp}
+              options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+              allLabel="ทุก รพ." style={{ minWidth: 200 }} />
             {(filterCatYear !== currentBEYear || filterCatHosp) && (
               <button onClick={() => { setFilterCatYear(currentBEYear); setFilterCatHosp('') }}
                 style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
