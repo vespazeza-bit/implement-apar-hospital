@@ -761,6 +761,14 @@ app.get('/api/schema', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── System Names (distinct from basic_checklist_master) ──────────────────────
+app.get('/api/system-names', async (req, res) => {
+  try {
+    const [r] = await pool.query("SELECT DISTINCT system_name FROM basic_checklist_master WHERE system_name IS NOT NULL AND system_name <> '' ORDER BY system_name")
+    res.json(r.map(x => x.system_name))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── Basic Checklist Master ────────────────────────────────────────────────────
 app.get('/api/basic-master', async (req, res) => {
   try {

@@ -1,11 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import SearchableSelect from '../components/SearchableSelect'
 
-const SYS_KEY = 'basicSystemNames'
-const loadSystemNames = () => {
-  try { return JSON.parse(localStorage.getItem(SYS_KEY) || '[]') } catch { return [] }
-}
+const API = import.meta.env.VITE_API_URL || ''
 
 export const DEFAULT_ISSUE_TYPES = ['ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน', 'การใช้งานระบบ', 'อื่นๆ']
 export const ISSUE_TYPES_KEY = 'sharedIssueTypes'
@@ -50,7 +47,10 @@ export default function TrainingSummary() {
   const [filterCategory, setFilterCategory] = useState('')
   const [limit, setLimit] = useState(30)
 
-  const [systemNames] = useState(loadSystemNames)
+  const [systemNames, setSystemNames] = useState([])
+  useEffect(() => {
+    fetch(`${API}/api/system-names`).then(r => r.json()).then(setSystemNames).catch(() => {})
+  }, [])
 
   // Issue type management
   const [issueTypes, setIssueTypes] = useState(loadIssueTypes)

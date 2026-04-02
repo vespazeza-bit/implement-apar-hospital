@@ -1,12 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { loadIssueTypes } from './TrainingSummary'
 import SearchableSelect from '../components/SearchableSelect'
 
-const SYS_KEY = 'basicSystemNames'
-const loadSystemNames = () => {
-  try { return JSON.parse(localStorage.getItem(SYS_KEY) || '[]') } catch { return [] }
-}
+const API = import.meta.env.VITE_API_URL || ''
 
 const PRIORITY = [
   { value: 'low', label: 'ต่ำ', color: '#16a34a', bg: '#f0fdf4' },
@@ -45,7 +42,10 @@ export default function SystemSummary() {
   const [filterCategory, setFilterCategory] = useState('')
   const [limit, setLimit] = useState(30)
 
-  const [systemNames] = useState(loadSystemNames)
+  const [systemNames, setSystemNames] = useState([])
+  useEffect(() => {
+    fetch(`${API}/api/system-names`).then(r => r.json()).then(setSystemNames).catch(() => {})
+  }, [])
   // Read shared issue types (managed from TrainingSummary page)
   const [issueTypes] = useState(loadIssueTypes)
 
