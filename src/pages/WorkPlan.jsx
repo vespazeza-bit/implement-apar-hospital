@@ -12,6 +12,7 @@ const PROJECT_STATUS = [
   { value: 'advance',  label: 'จัดทำ Adv',         color: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
   { value: 'inprog',   label: 'กำลังดำเนินการ',   color: '#0891b2', bg: '#ecfeff', border: '#67e8f9' },
   { value: 'deliver',  label: 'ส่งมอบงาน',        color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
+  { value: 'accounting', label: 'ส่งต่อบัญชี',   color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
   { value: 'closed',   label: 'ปิดโครงการ',       color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
 ]
 
