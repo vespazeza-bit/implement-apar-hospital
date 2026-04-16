@@ -171,23 +171,29 @@ export default function WorkPlan() {
   }
 
   const exportCSV = () => {
-    const headers = ['#', 'โครงการ', 'เจ้าของไซต์', 'โรงพยาบาล', 'ประเภท', 'งบประมาณ', 'Online เริ่มต้น', 'Online สิ้นสุด', 'วันเริ่ม', 'วันสิ้นสุด', 'Revisit 1', 'Revisit 2', 'สถานะ', 'หมายเหตุ']
-    const rows = filtered.map((p, i) => [
-      i + 1,
-      p.projectName || '',
-      p.siteOwner || '',
-      getHospName(p.hospitalId),
-      p.installType || '',
-      p.budget ? Number(p.budget).toLocaleString('th-TH') : '',
-      fmtD(p.onlineStart),
-      fmtD(p.onlineEnd),
-      fmtD(p.startDate),
-      fmtD(p.endDate),
-      fmtD(p.revisit1),
-      fmtD(p.revisit2),
-      PROJECT_STATUS.find(s => s.value === p.status)?.label || p.status || '',
-      p.note || '',
-    ])
+    const headers = ['ลำดับ', 'โครงการ', 'โรงพยาบาล', 'เจ้าของไซต์', 'ประเภท', 'งบประมาณ', 'จ่ายจริง', 'Online เริ่มต้น', 'Online สิ้นสุด', 'วันเริ่ม', 'วันสิ้นสุด', 'Revisit 1', 'Revisit 2', 'สถานะ', 'หมายเหตุ']
+    const rows = filtered.map((p, i) => {
+      const actualTotal = (advanceRecords || [])
+        .filter(r => String(r.planId) === String(p.id))
+        .reduce((sum, r) => sum + (Number(r.actualAmount) || 0), 0)
+      return [
+        i + 1,
+        p.projectName || '',
+        getHospName(p.hospitalId),
+        p.siteOwner || '',
+        p.installType || '',
+        p.budget ? Number(p.budget).toLocaleString('th-TH') : '',
+        actualTotal > 0 ? actualTotal.toLocaleString('th-TH') : '',
+        fmtD(p.onlineStart),
+        fmtD(p.onlineEnd),
+        fmtD(p.startDate),
+        fmtD(p.endDate),
+        fmtD(p.revisit1),
+        fmtD(p.revisit2),
+        PROJECT_STATUS.find(s => s.value === p.status)?.label || p.status || '',
+        p.note || '',
+      ]
+    })
     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n')
     const bom = '\uFEFF'
     const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' })
