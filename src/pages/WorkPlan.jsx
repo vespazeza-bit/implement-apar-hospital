@@ -161,6 +161,42 @@ export default function WorkPlan() {
 
   const getHospName = (id) => hospitals.find(h => String(h.id) === String(id))?.name || id
 
+  const THAI_MON_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+  const fmtD = (d) => {
+    if (!d) return ''
+    const s = String(d).slice(0, 10)
+    if (!s.includes('-')) return ''
+    const [y, m, day] = s.split('-')
+    return `${parseInt(day,10)} ${THAI_MON_SHORT[parseInt(m,10)-1]} ${parseInt(y,10)+543}`
+  }
+
+  const exportCSV = () => {
+    const headers = ['#', 'โครงการ', 'เจ้าของไซต์', 'โรงพยาบาล', 'ประเภท', 'งบประมาณ', 'Online เริ่มต้น', 'Online สิ้นสุด', 'วันเริ่ม', 'วันสิ้นสุด', 'Revisit 1', 'Revisit 2', 'สถานะ', 'หมายเหตุ']
+    const rows = filtered.map((p, i) => [
+      i + 1,
+      p.projectName || '',
+      p.siteOwner || '',
+      getHospName(p.hospitalId),
+      p.installType || '',
+      p.budget ? Number(p.budget).toLocaleString('th-TH') : '',
+      fmtD(p.onlineStart),
+      fmtD(p.onlineEnd),
+      fmtD(p.startDate),
+      fmtD(p.endDate),
+      fmtD(p.revisit1),
+      fmtD(p.revisit2),
+      PROJECT_STATUS.find(s => s.value === p.status)?.label || p.status || '',
+      p.note || '',
+    ])
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+    const bom = '\uFEFF'
+    const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `แผนปฏิบัติงาน_${new Date().toISOString().slice(0,10)}.csv`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   // ดึงปี พ.ศ. จากวันที่เริ่มโครงการ (ใช้ startDate หรือ onlineStart)
   const getPlanYear = (p) => {
     const d = p.startDate || p.onlineStart
@@ -212,6 +248,9 @@ export default function WorkPlan() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={openAdd} style={{ padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           + เพิ่มแผนงาน
+        </button>
+        <button onClick={exportCSV} style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          ⬇ Export Excel
         </button>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อโครงการ / รพ."
           style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 200 }} />
