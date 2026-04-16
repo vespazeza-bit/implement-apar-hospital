@@ -28,7 +28,7 @@ const formatDate = (d) => {
 const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
 
 const EMPTY_PLAN = {
-  hospitalId: '', projectName: '', siteOwner: '', installType: '',
+  hospitalId: '', projectName: '', siteOwner: '', teamLeader: '', installType: '',
   budget: '', onlineStart: '', onlineEnd: '',
   startDate: '', endDate: '', revisit1: '', revisit2: '',
   status: 'waiting', team: [], note: '',
@@ -171,7 +171,7 @@ export default function WorkPlan() {
   }
 
   const exportCSV = () => {
-    const headers = ['ลำดับ', 'โครงการ', 'โรงพยาบาล', 'เจ้าของไซต์', 'ประเภท', 'งบประมาณ', 'จ่ายจริง', 'Online เริ่มต้น', 'Online สิ้นสุด', 'วันเริ่ม', 'วันสิ้นสุด', 'Revisit 1', 'Revisit 2', 'สถานะ', 'หมายเหตุ']
+    const headers = ['ลำดับ', 'โครงการ', 'โรงพยาบาล', 'เจ้าของไซต์', 'หัวหน้าทีม', 'ประเภท', 'งบประมาณ', 'จ่ายจริง', 'Online เริ่มต้น', 'Online สิ้นสุด', 'วันเริ่ม', 'วันสิ้นสุด', 'Revisit 1', 'Revisit 2', 'สถานะ', 'หมายเหตุ']
     const rows = filtered.map((p, i) => {
       const actualTotal = (advanceRecords || [])
         .filter(r => String(r.planId) === String(p.id))
@@ -181,6 +181,7 @@ export default function WorkPlan() {
         p.projectName || '',
         getHospName(p.hospitalId),
         p.siteOwner || '',
+        p.teamLeader || '',
         p.installType || '',
         p.budget ? Number(p.budget).toLocaleString('th-TH') : '',
         actualTotal > 0 ? actualTotal.toLocaleString('th-TH') : '',
@@ -311,6 +312,7 @@ export default function WorkPlan() {
                     <td style={{ padding: '12px', minWidth: 180 }}>
                       <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 13 }}>{plan.projectName}</div>
                       {plan.siteOwner && <div style={{ fontSize: 11, color: '#64748b' }}>👤 {plan.siteOwner}</div>}
+                      {plan.teamLeader && <div style={{ fontSize: 11, color: '#0891b2' }}>⭐ {plan.teamLeader}</div>}
                     </td>
                     <td style={{ padding: '12px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>{getHospName(plan.hospitalId)}</td>
                     <td style={{ padding: '12px', fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{plan.installType || '-'}</td>
@@ -450,6 +452,17 @@ export default function WorkPlan() {
                           ⚠️ ยังไม่มีข้อมูลทีมงาน กรุณาเพิ่มทีมงานในเมนู "ทีมงาน" ก่อน
                         </div>
                       )}
+                    </div>
+                    <div>
+                      <label style={LS}>หัวหน้าทีม</label>
+                      <select value={form.teamLeader} onChange={set('teamLeader')} style={IS}>
+                        <option value="">-- เลือกหัวหน้าทีม --</option>
+                        {teamMembers.map(m => (
+                          <option key={m.id} value={m.name}>
+                            {m.name}{m.position ? ` (${m.position})` : ''}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label style={LS}>ประเภทการติดตั้ง</label>

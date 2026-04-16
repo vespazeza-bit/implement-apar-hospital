@@ -159,7 +159,8 @@ app.get('/api/plans', async (req, res) => {
     res.json(plans.map(p => ({
       id: p.id, projectName: p.project_name,
       hospitalId: p.hospital_id ? String(p.hospital_id) : '',
-      siteOwner: p.site_owner || '', installType: p.install_type || '',
+      siteOwner: p.site_owner || '', teamLeader: p.team_leader || '',
+      installType: p.install_type || '',
       budget: p.budget || '', onlineStart: p.online_start || '',
       onlineEnd: p.online_end || '', startDate: p.start_date || '',
       endDate: p.end_date || '', revisit1: p.revisit1 || '',
@@ -177,10 +178,10 @@ app.post('/api/plans', async (req, res) => {
   try {
     const d = req.body
     const [r] = await pool.query(
-      `INSERT INTO project_plans (project_name,hospital_id,site_owner,install_type,budget,
+      `INSERT INTO project_plans (project_name,hospital_id,site_owner,team_leader,install_type,budget,
         online_start,online_end,start_date,end_date,revisit1,revisit2,status,note)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [d.projectName, nn(d.hospitalId), d.siteOwner, d.installType, nn(d.budget),
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [d.projectName, nn(d.hospitalId), d.siteOwner, d.teamLeader || '', d.installType, nn(d.budget),
        nd(d.onlineStart), nd(d.onlineEnd), nd(d.startDate), nd(d.endDate),
        nd(d.revisit1), nd(d.revisit2), d.status, d.note])
     const planId = r.insertId
@@ -197,10 +198,10 @@ app.put('/api/plans/:id', async (req, res) => {
   try {
     const d = req.body
     await pool.query(
-      `UPDATE project_plans SET project_name=?,hospital_id=?,site_owner=?,install_type=?,budget=?,
+      `UPDATE project_plans SET project_name=?,hospital_id=?,site_owner=?,team_leader=?,install_type=?,budget=?,
         online_start=?,online_end=?,start_date=?,end_date=?,revisit1=?,revisit2=?,status=?,note=?
        WHERE id=?`,
-      [d.projectName, nn(d.hospitalId), d.siteOwner, d.installType, nn(d.budget),
+      [d.projectName, nn(d.hospitalId), d.siteOwner, d.teamLeader || '', d.installType, nn(d.budget),
        nd(d.onlineStart), nd(d.onlineEnd), nd(d.startDate), nd(d.endDate),
        nd(d.revisit1), nd(d.revisit2), d.status, d.note, req.params.id])
     await pool.query('DELETE FROM project_plan_team WHERE plan_id=?', [req.params.id])
@@ -850,6 +851,10 @@ async function runMigrations() {
     {
       table: 'masterplan_items', column: 'status',
       sql: `ALTER TABLE masterplan_items ADD COLUMN status VARCHAR(20) DEFAULT 'pending' AFTER preparation`,
+    },
+    {
+      table: 'project_plans', column: 'team_leader',
+      sql: `ALTER TABLE project_plans ADD COLUMN team_leader VARCHAR(200) NULL AFTER site_owner`,
     },
   ]
 
