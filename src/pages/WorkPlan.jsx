@@ -16,6 +16,39 @@ const PROJECT_STATUS = [
   { value: 'closed',   label: 'ปิดโครงการ',       color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
 ]
 
+const ADV_STATUS = [
+  { value: 'pending',         label: 'ยังไม่ดำเนินการ', color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' },
+  { value: 'waiting_approve', label: 'รออนุมัติ',        color: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  { value: 'approved',        label: 'อนุมัติแล้ว',      color: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
+  { value: 'received',        label: 'ได้ Adv แล้ว',     color: '#0891b2', bg: '#ecfeff', border: '#67e8f9' },
+  { value: 'waiting_clear',   label: 'รอเคลียร์ Adv',   color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  { value: 'cleared',         label: 'เคลียร์แล้ว',      color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
+]
+
+function ProgressCell({ p }) {
+  if (!p || p.total === 0) return <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>
+  const c = p.pct === 100 ? '#16a34a' : p.pct > 50 ? '#0891b2' : p.pct > 0 ? '#d97706' : '#e2e8f0'
+  return (
+    <div style={{ minWidth: 70 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{p.pct}%</div>
+      <div style={{ background: '#e2e8f0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+        <div style={{ width: `${p.pct}%`, background: c, height: '100%', borderRadius: 4 }} />
+      </div>
+    </div>
+  )
+}
+
+function AdvBadge({ status }) {
+  const s = ADV_STATUS.find(x => x.value === status)
+  if (!s) return <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>
+  return (
+    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+      background: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap' }}>
+      {s.label}
+    </span>
+  )
+}
+
 const INSTALL_TYPES = ['ติดตั้งระบบ', 'เข้า Revisit', 'เข้า Office']
 
 const formatDate = (d) => {
@@ -106,15 +139,23 @@ function StatusBadge({ value }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function WorkPlan() {
-  const { hospitals, teamMembers, projectPlans: plans, addPlan, updatePlan, deletePlan, advanceRecords, refreshMasterplanSummary } = useApp()
+  const { hospitals, teamMembers, projectPlans: plans, addPlan, updatePlan, deletePlan, advanceRecords, refreshMasterplanSummary, getProgress } = useApp()
   const location = useLocation()
 
+  const [activeTab, setActiveTab] = useState('plan')   // 'plan' = ทะเบียน, 'progress' = ความคืบหน้า
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_PLAN)
   const [editId, setEditId] = useState(null)
   const [viewPlan, setViewPlan] = useState(null)
   const [showMasterPlan, setShowMasterPlan] = useState(false)
   const [masterPlanInitId, setMasterPlanInitId] = useState('')
+
+  // หาสถานะ Advance ล่าสุดของโครงการ
+  const getAdvanceStatusByPlan = (planId) => {
+    const recs = (advanceRecords || []).filter(r => String(r.planId) === String(planId))
+    if (!recs.length) return null
+    return recs.reduce((latest, r) => (r.id > latest.id ? r : latest)).status
+  }
 
   // เปิด modal แก้ไขอัตโนมัติเมื่อมาจากปฏิทิน
   useEffect(() => {
@@ -204,20 +245,41 @@ export default function WorkPlan() {
     a.click(); URL.revokeObjectURL(url)
   }
 
-  // ดึงปี พ.ศ. จากวันที่เริ่มโครงการ (ใช้ startDate หรือ onlineStart)
-  const getPlanYear = (p) => {
-    const d = p.startDate || p.onlineStart
+  // ดึงปี พ.ศ. จากช่วง วันที่เริ่มโครงการ → สิ้นสุดโครงการ (ไม่ใช้ onlineStart/onlineEnd)
+  // รองรับข้อมูลเก่าที่มีทั้ง ค.ศ. (เช่น 2026) และ พ.ศ. (เช่น 2569) ปนกันใน DB
+  const beYear = (d) => {
     if (!d) return null
-    const adYear = parseInt(d.slice(0, 4), 10)
-    return isNaN(adYear) ? null : adYear + 543
+    const y = parseInt(String(d).slice(0, 4), 10)
+    if (isNaN(y)) return null
+    return y >= 2400 ? y : y + 543
   }
-  const availableYears = [...new Set(plans.map(getPlanYear).filter(Boolean))].sort((a, b) => b - a)
+  const getPlanYearRange = (p) => {
+    const s = beYear(p.startDate)
+    const e = beYear(p.endDate)
+    if (s == null && e == null) return null
+    return { start: s ?? e, end: e ?? s }
+  }
+  const availableYears = (() => {
+    const set = new Set()
+    plans.forEach(p => {
+      const r = getPlanYearRange(p)
+      if (!r) return
+      for (let y = r.start; y <= r.end; y++) set.add(y)
+    })
+    return [...set].sort((a, b) => b - a)
+  })()
 
   const filtered = plans
     .filter(p => {
       if (filterStatus && p.status !== filterStatus) return false
       if (filterHosp && p.hospitalId !== filterHosp) return false
-      if (filterYear && getPlanYear(p) !== Number(filterYear)) return false
+      if (filterYear) {
+        const r = getPlanYearRange(p)
+        if (r != null) {
+          const fy = Number(filterYear)
+          if (fy < r.start || fy > r.end) return false
+        }
+      }
       if (search && !p.projectName.includes(search) && !getHospName(p.hospitalId).includes(search)) return false
       return true
     })
@@ -285,12 +347,82 @@ export default function WorkPlan() {
         </div>
       </div>
 
-      {/* Registry Table */}
+      {/* Tabs — สลับมุมมอง: ทะเบียน vs ความคืบหน้า */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, borderBottom: '2px solid #e2e8f0' }}>
+        {[
+          { key: 'plan',     label: '📋 ทะเบียนแผนงาน' },
+          { key: 'progress', label: '📊 ความคืบหน้าโครงการ' },
+        ].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            padding: '10px 22px', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700,
+            background: 'none', color: activeTab === t.key ? '#0891b2' : '#64748b',
+            borderBottom: `3px solid ${activeTab === t.key ? '#0891b2' : 'transparent'}`,
+            marginBottom: -2,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Empty state shared by both tabs */}
       {displayed.length === 0 ? (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
           <div style={{ fontSize: 16, fontWeight: 600 }}>ยังไม่มีแผนงาน</div>
           <div style={{ fontSize: 13, marginTop: 6 }}>คลิก "+ เพิ่มแผนงาน" เพื่อสร้างแผนงานโครงการแรก</div>
+        </div>
+      ) : activeTab === 'progress' ? (
+        /* Tab: Progress (รวมจาก ProjectSummary เดิม) */
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#1e3a5f' }}>
+                  {['#', 'โครงการ', 'โรงพยาบาล', 'Advance', 'แผนปฏิบัติงาน', 'ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน', ''].map(h => (
+                    <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', borderRight: '1px solid rgba(255,255,255,0.08)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {displayed.map((plan, idx) => {
+                  const b  = getProgress('basic', plan.hospitalId)
+                  const fp = getProgress('form', plan.hospitalId)
+                  const r  = getProgress('report', plan.hospitalId)
+                  const mp = getProgress('masterplan', plan.hospitalId)
+                  const advStatus = getAdvanceStatusByPlan(plan.id)
+                  return (
+                    <tr key={plan.id} style={{ borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                      onMouseLeave={e => e.currentTarget.style.background = ''}>
+                      <td style={{ padding: '12px 14px', color: '#94a3b8', fontSize: 13 }}>{idx + 1}</td>
+                      <td style={{ padding: '12px 14px', minWidth: 220, fontWeight: 600, color: '#1e293b', fontSize: 13 }}>
+                        {plan.projectName || <span style={{ color: '#94a3b8' }}>-</span>}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>{getHospName(plan.hospitalId)}</td>
+                      <td style={{ padding: '12px 14px' }}><AdvBadge status={advStatus} /></td>
+                      <td style={{ padding: '12px 14px' }}><ProgressCell p={mp} /></td>
+                      <td style={{ padding: '12px 14px' }}><ProgressCell p={b} /></td>
+                      <td style={{ padding: '12px 14px' }}><ProgressCell p={fp} /></td>
+                      <td style={{ padding: '12px 14px' }}><ProgressCell p={r} /></td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          <button onClick={() => setViewPlan(plan)} style={btn('#f8fafc', '#e2e8f0', '#374151')}>รายละเอียด</button>
+                          <button onClick={() => openEdit(plan)} style={btn('#eff6ff', '#bfdbfe', '#1d4ed8')}>แก้ไข</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: 24, padding: '12px 20px', flexWrap: 'wrap',
+            background: '#1e3a5f', borderTop: '2px solid #0891b2',
+          }}>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>
+              แสดง <strong style={{ color: '#fff' }}>{displayed.length}</strong> โครงการ จาก <strong style={{ color: '#fff' }}>{filtered.length}</strong>
+            </div>
+          </div>
         </div>
       ) : (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>

@@ -59,7 +59,16 @@ export default function Advance() {
   const [filterInstallType, setFilterInstallType] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterYear, setFilterYear] = useState(String(new Date().getFullYear() + 543))
   const [limit, setLimit] = useState(30)
+
+  // แปลงปีจากสตริงวันที่ → พ.ศ. (รองรับข้อมูลที่ DB เก็บปนกันทั้ง ค.ศ. และ พ.ศ.)
+  const toBE = (d) => {
+    if (!d) return null
+    const y = parseInt(String(d).slice(0, 4), 10)
+    if (isNaN(y)) return null
+    return y >= 2400 ? y : y + 543
+  }
 
   // โหลดข้อมูลจาก API
   useEffect(() => {
@@ -166,12 +175,20 @@ export default function Advance() {
   const getInstallType = (planId) =>
     projectPlans.find(p => String(p.id) === String(planId))?.installType || ''
 
+  const availableYears = [...new Set(
+    records.map(r => toBE(r.advDate)).filter(Boolean)
+  )].sort((a, b) => b - a)
+
   const filtered = records
     .filter(r => {
       if (filterStatus && r.status !== filterStatus) return false
       if (filterInstallType && getInstallType(r.planId) !== filterInstallType) return false
       if (filterDateFrom && r.advDate && r.advDate < filterDateFrom) return false
       if (filterDateTo && r.advDate && r.advDate > filterDateTo) return false
+      if (filterYear) {
+        const y = toBE(r.advDate)
+        if (y != null && y !== Number(filterYear)) return false
+      }
       return true
     })
     .sort((a, b) => (b.advDate || '').localeCompare(a.advDate || ''))
@@ -214,6 +231,16 @@ export default function Advance() {
             + เพิ่มรายการ Advance
           </button>
 
+          {/* 0. กรองปี พ.ศ. (default = ปีปัจจุบัน) */}
+          <div>
+            <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 4 }}>ปี พ.ศ.</div>
+            <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
+              style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 130 }}>
+              <option value="">ทุกปี</option>
+              {availableYears.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
+            </select>
+          </div>
+
           {/* 1. กรองประเภทการติดตั้ง */}
           <div>
             <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 4 }}>ประเภทการติดตั้ง</div>
@@ -246,8 +273,8 @@ export default function Advance() {
             </select>
           </div>
 
-          {(filterStatus || filterInstallType || filterDateFrom || filterDateTo) && (
-            <button onClick={() => { setFilterStatus(''); setFilterInstallType(''); setFilterDateFrom(''); setFilterDateTo('') }}
+          {(filterStatus || filterInstallType || filterDateFrom || filterDateTo || filterYear) && (
+            <button onClick={() => { setFilterStatus(''); setFilterInstallType(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterYear('') }}
               style={{ padding: '8px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#dc2626', alignSelf: 'flex-end' }}>
               ✕ ล้างตัวกรอง
             </button>

@@ -19,9 +19,11 @@ const STATUS_OPT = [
 ]
 
 const EMPTY_FORM = {
-  hospitalId: '', reportDate: '', resolvedDate: '', systemName: '', category: '', description: '',
+  hospKey: '', hospitalId: '', reportDate: '', resolvedDate: '', systemName: '', category: '', description: '',
   priority: 'medium', status: 'open', resolution: '', reportedBy: '',
 }
+
+const LAST_HOSP_KEY = 'lastSystemIssueHosp'
 
 const formatDate = (d) => {
   if (!d) return '-'
@@ -31,16 +33,48 @@ const formatDate = (d) => {
   return `${day}/${m}/${y}`
 }
 const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const getCurrentUserName = () => {
+  try {
+    const u = JSON.parse(localStorage.getItem('currentUser') || '{}')
+    return u.name || u.username || ''
+  } catch { return '' }
+}
 
 export default function SystemSummary() {
-  const { hospitals, teamMembers, systemIssues, addSystemIssue, updateSystemIssue, deleteSystemIssue } = useApp()
+  const { hospitals, teamMembers, projectPlans, systemIssues, addSystemIssue, updateSystemIssue, deleteSystemIssue } = useApp()
   const [form, setForm] = useState(EMPTY_FORM)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [filterHosp, setFilterHosp] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [limit, setLimit] = useState(30)
+
+  // Build รพ./โครงการ options (UI only — value carries hospitalId)
+  const hospOpts = (() => {
+    const opts = []
+    hospitals.forEach(h => {
+      const plans = projectPlans.filter(p => String(p.hospitalId) === String(h.id))
+      if (plans.length === 0) {
+        opts.push({ value: `h:${h.id}`, label: h.name, hospitalId: String(h.id) })
+      } else {
+        plans.forEach(p => {
+          const projName = p.projectName || ''
+          opts.push({
+            value: `p:${p.id}`,
+            label: projName ? `${h.name} — ${projName}` : h.name,
+            hospitalId: String(h.id),
+          })
+        })
+      }
+    })
+    return opts
+  })()
+  const findOpt = (key) => hospOpts.find(o => o.value === key)
+  const firstOptForHosp = (hospId) => hospOpts.find(o => o.hospitalId === String(hospId))
 
   const [systemNames, setSystemNames] = useState([])
   useEffect(() => {
@@ -54,10 +88,12 @@ export default function SystemSummary() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.hospitalId || !form.description || !form.reportDate) return alert('กรุณากรอกข้อมูลให้ครบถ้วน')
+    if (form.hospKey) localStorage.setItem(LAST_HOSP_KEY, form.hospKey)
+    const { hospKey, ...payload } = form
     if (editId) {
-      await updateSystemIssue(editId, { ...form, id: editId })
+      await updateSystemIssue(editId, { ...payload, id: editId })
     } else {
-      await addSystemIssue(form)
+      await addSystemIssue(payload)
     }
     setForm(EMPTY_FORM)
     setShowForm(false)
@@ -65,9 +101,29 @@ export default function SystemSummary() {
   }
 
   const handleEdit = (issue) => {
-    setForm({ ...issue, reportDate: toDateStr(issue.reportDate), resolvedDate: toDateStr(issue.resolvedDate) })
+    const opt = firstOptForHosp(issue.hospitalId)
+    setForm({
+      ...issue,
+      hospKey: opt?.value || '',
+      reportDate: toDateStr(issue.reportDate),
+      resolvedDate: toDateStr(issue.resolvedDate),
+    })
     setEditId(issue.id)
     setShowForm(true)
+  }
+
+  const openAddForm = () => {
+    setShowForm(true)
+    setEditId(null)
+    const lastKey = localStorage.getItem(LAST_HOSP_KEY) || ''
+    const lastOpt = findOpt(lastKey)
+    setForm({
+      ...EMPTY_FORM,
+      hospKey: lastOpt ? lastKey : '',
+      hospitalId: lastOpt?.hospitalId || '',
+      reportDate: todayStr(),
+      reportedBy: getCurrentUserName(),
+    })
   }
 
   const handleDelete = async (id) => {
@@ -79,6 +135,10 @@ export default function SystemSummary() {
     if (filterHosp && i.hospitalId !== filterHosp) return false
     if (filterStatus && i.status !== filterStatus) return false
     if (filterCategory && i.category !== filterCategory) return false
+    const d = i.reportDate ? String(i.reportDate).slice(0, 10) : ''
+    if (filterDateFrom && d && d < filterDateFrom) return false
+    if (filterDateTo && d && d > filterDateTo) return false
+    if ((filterDateFrom || filterDateTo) && !d) return false
     return true
   }).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''))
 
@@ -111,13 +171,21 @@ export default function SystemSummary() {
 
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_FORM) }} style={{
+        <button onClick={openAddForm} style={{
           padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
           borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
         }}>+ รายงานปัญหา</button>
         <SearchableSelect value={filterHosp} onChange={setFilterHosp}
           options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
           allLabel="ทุก รพ." style={{ minWidth: 200 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, color: '#64748b' }}>พบปัญหา:</span>
+          <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+            style={{ padding: '7px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
+          <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+            style={{ padding: '7px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
+        </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
           <option value="">ทุกสถานะ</option>
           {STATUS_OPT.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -126,8 +194,8 @@ export default function SystemSummary() {
           <option value="">ทุกประเภทปัญหา</option>
           {issueTypes.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        {(filterHosp || filterStatus || filterCategory) && (
-          <button onClick={() => { setFilterHosp(''); setFilterStatus(''); setFilterCategory('') }} style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
+        {(filterHosp || filterStatus || filterCategory || filterDateFrom || filterDateTo) && (
+          <button onClick={() => { setFilterHosp(''); setFilterStatus(''); setFilterCategory(''); setFilterDateFrom(''); setFilterDateTo('') }} style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
             ✕ ล้างตัวกรอง
           </button>
         )}
@@ -195,22 +263,30 @@ export default function SystemSummary() {
             <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 {[
-                  { label: 'โรงพยาบาล *', key: 'hospitalId', type: 'hospSearch' },
+                  { label: 'โรงพยาบาล / โครงการ *', key: 'hospKey', type: 'hospSearch' },
                   { label: 'วันที่พบปัญหา *', key: 'reportDate', type: 'date' },
                   { label: 'วันที่แก้ไข', key: 'resolvedDate', type: 'date' },
-                  { label: 'ผู้รายงาน', key: 'reportedBy', type: 'select', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
+                  { label: 'ผู้รายงาน', key: 'reportedBy', type: 'select', options: (() => {
+                    const opts = teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') }))
+                    const me = getCurrentUserName()
+                    if (me && !opts.some(o => o.value === me)) opts.unshift({ value: me, label: `${me} (ฉัน)` })
+                    return opts
+                  })(), nullable: true },
                   { label: 'ระบบงาน', key: 'systemName', type: 'select', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
                   { label: 'ประเภทปัญหา', key: 'category', type: 'select', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
                   { label: 'ความสำคัญ', key: 'priority', type: 'select', options: PRIORITY.map(p => ({ value: p.value, label: p.label })) },
                   { label: 'สถานะ', key: 'status', type: 'select', options: STATUS_OPT.map(s => ({ value: s.value, label: s.label })) },
                 ].map(f => (
-                  <div key={f.key} style={{ gridColumn: f.key === 'hospitalId' || f.key === 'status' ? 'span 2' : 'span 1' }}>
+                  <div key={f.key} style={{ gridColumn: f.key === 'hospKey' || f.key === 'status' ? 'span 2' : 'span 1' }}>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{f.label}</label>
                     {f.type === 'hospSearch' ? (
-                      <SearchableSelect value={String(form[f.key] || '')}
-                        onChange={v => setForm(p => ({ ...p, [f.key]: v }))}
-                        options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
-                        placeholder="-- เลือก รพ. --"
+                      <SearchableSelect value={String(form.hospKey || '')}
+                        onChange={v => {
+                          const opt = findOpt(v)
+                          setForm(p => ({ ...p, hospKey: v, hospitalId: opt?.hospitalId || '' }))
+                        }}
+                        options={hospOpts}
+                        placeholder="-- เลือก รพ. / โครงการ --"
                         style={{ width: '100%' }} />
                     ) : f.type === 'select' ? (
                       <select value={form[f.key]} onChange={set(f.key)} style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>

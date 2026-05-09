@@ -105,6 +105,7 @@ export default function RiskAnalysis() {
   const [filterCatYear, setFilterCatYear] = useState(currentBEYear)
   const [filterCatHosp, setFilterCatHosp] = useState('')
   const [filterReportYear, setFilterReportYear] = useState(currentBEYear)
+  const [filterReportHosp, setFilterReportHosp] = useState('')
 
   const allIssues = [
     ...trainingIssues.map(i => ({ ...i, source: 'training' })),
@@ -160,7 +161,8 @@ export default function RiskAnalysis() {
     (!filterCatHosp || String(i.hospitalId) === filterCatHosp)
   )
   const reportIssues = allIssues.filter(i =>
-    !filterReportYear || getIssueYear(i) === filterReportYear
+    (!filterReportYear || getIssueYear(i) === filterReportYear) &&
+    (!filterReportHosp || String(i.hospitalId) === filterReportHosp)
   )
 
   // Per-tab computed risks
@@ -170,6 +172,10 @@ export default function RiskAnalysis() {
   const catTabCatRisks    = buildCatRisks(catTabIssues)
   const reportHospRisks   = buildHospRisks(reportIssues)
   const reportCatRisks    = buildCatRisks(reportIssues)
+  // เมื่อกรอง รพ. → แสดงเฉพาะ รพ.นั้นในตาราง/สรุป
+  const reportHospRisksVisible = filterReportHosp
+    ? reportHospRisks.filter(h => String(h.hosp.id) === filterReportHosp)
+    : reportHospRisks
 
   // For summary cards (always all issues)
   const hospRisks = buildHospRisks(allIssues)
@@ -278,7 +284,7 @@ export default function RiskAnalysis() {
             <h3 style={{ color: '#1e3a5f', fontSize: 15, marginBottom: 16 }}>🏥 ระดับความเสี่ยงตาม รพ.</h3>
             {overviewHospRisks.filter(h => h.total > 0).length === 0 ? (
               <div style={{ color: '#94a3b8', textAlign: 'center', padding: 32 }}>ยังไม่มีข้อมูล</div>
-            ) : overviewHospRisks.slice(0, 10).map(h => (
+            ) : overviewHospRisks.filter(h => h.total > 0).slice(0, 10).map(h => (
               <div key={h.hosp.id} style={{ marginBottom: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{h.hosp.name}</span>
@@ -495,8 +501,11 @@ export default function RiskAnalysis() {
               <option value="">ทุกปี พ.ศ.</option>
               {allYears.map(y => <option key={y} value={y}>ปี {y}</option>)}
             </select>
-            {filterReportYear !== currentBEYear && (
-              <button onClick={() => setFilterReportYear(currentBEYear)}
+            <SearchableSelect value={filterReportHosp} onChange={setFilterReportHosp}
+              options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
+              allLabel="ทุก รพ." style={{ minWidth: 200 }} />
+            {(filterReportYear !== currentBEYear || filterReportHosp) && (
+              <button onClick={() => { setFilterReportYear(currentBEYear); setFilterReportHosp('') }}
                 style={{ padding: '8px 14px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#64748b' }}>
                 ✕ ล้าง
               </button>
@@ -525,10 +534,10 @@ export default function RiskAnalysis() {
               </h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
                 {[
-                  { label: 'รพ. ทั้งหมด', value: hospitals.length, color: '#1e3a5f' },
+                  { label: 'รพ. ทั้งหมด', value: filterReportHosp ? 1 : hospitals.length, color: '#1e3a5f' },
                   { label: 'ปัญหาทั้งหมด', value: reportIssues.length, color: '#374151' },
                   { label: 'ยังไม่แก้ไข', value: reportIssues.filter(i => i.status !== 'closed').length, color: '#dc2626' },
-                  { label: 'รพ. ความเสี่ยงสูง', value: reportHospRisks.filter(h => h.score >= 4).length, color: '#ea580c' },
+                  { label: 'รพ. ความเสี่ยงสูง', value: reportHospRisksVisible.filter(h => h.score >= 4).length, color: '#ea580c' },
                 ].map(s => (
                   <div key={s.label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', textAlign: 'center' }}>
                     <div style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.value}</div>
@@ -546,7 +555,7 @@ export default function RiskAnalysis() {
                 </thead>
                 <tbody>
                   {RISK_LEVEL.slice(0, 4).map((rl, i) => {
-                    const cnt2 = reportHospRisks.filter(h => {
+                    const cnt2 = reportHospRisksVisible.filter(h => {
                       if (i === 0) return h.score >= 8
                       if (i === 1) return h.score >= 4 && h.score < 8
                       if (i === 2) return h.score >= 2 && h.score < 4
@@ -582,7 +591,7 @@ export default function RiskAnalysis() {
                   </tr>
                 </thead>
                 <tbody>
-                  {reportHospRisks.map((h, idx) => {
+                  {reportHospRisksVisible.map((h, idx) => {
                     const rl = getRiskLevel(h.score)
                     return (
                       <tr key={h.hosp.id} style={{ background: idx % 2 === 0 ? '#f8fafc' : '#fff' }}>

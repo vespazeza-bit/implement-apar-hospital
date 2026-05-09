@@ -67,73 +67,77 @@ export default function ProjectSummary() {
   const [filterYear, setFilterYear] = useState(String(new Date().getFullYear() + 543))
   const [limit, setLimit] = useState(30)
 
+  const hospById = (id) => hospitals.find(h => String(h.id) === String(id))
+
   const provinces = [...new Set(hospitals.map(h => h.province).filter(Boolean))].sort()
 
   // ดึง ปี พ.ศ. จาก startDate ของ projectPlans
+  // รองรับข้อมูลเก่าที่มีทั้ง ค.ศ. และ พ.ศ. ปนกันใน DB
+  const toBE = (d) => {
+    if (!d) return null
+    const y = parseInt(String(d).slice(0, 4), 10)
+    if (isNaN(y)) return null
+    return y >= 2400 ? y : y + 543
+  }
   const availableYears = [...new Set(
-    projectPlans
-      .map(p => p.startDate ? (new Date(p.startDate).getFullYear() + 543) : null)
-      .filter(Boolean)
+    projectPlans.map(p => toBE(p.startDate)).filter(Boolean)
   )].sort((a, b) => b - a)
 
-  // หา plan status ล่าสุดของแต่ละ รพ.
-  const getPlanStatus = (hospId) => {
-    const plans = projectPlans.filter(p => String(p.hospitalId) === String(hospId))
-    if (!plans.length) return null
-    return plans.reduce((latest, p) => (p.id > latest.id ? p : latest)).status
-  }
-
-  // ตรวจสอบว่า รพ. มีแผนในปี พ.ศ. ที่เลือก
-  const hasPlansInYear = (hospId, year) => {
-    return projectPlans.some(p =>
-      String(p.hospitalId) === String(hospId) &&
-      p.startDate &&
-      (new Date(p.startDate).getFullYear() + 543) === Number(year)
-    )
-  }
-
-  const filtered = hospitals.filter(h => {
-    if (filterProvince && h.province !== filterProvince) return false
-    if (filterHospital && h.id !== Number(filterHospital)) return false
-    if (filterPlanStatus && getPlanStatus(h.id) !== filterPlanStatus) return false
-    if (filterYear && !hasPlansInYear(h.id, filterYear)) return false
-    return true
-  })
-
-  const displayed = filtered.slice(0, limit)
-
-  const overallStats = filtered.map(h => {
-    const b = getProgress('basic', h.id)
-    const f = getProgress('form', h.id)
-    const r = getProgress('report', h.id)
-    return { ...h, overall: Math.round((b.pct + f.pct + r.pct) / 3) }
-  })
-
-  const done = overallStats.filter(h => h.overall === 100).length
-  const inProgress = overallStats.filter(h => h.overall > 0 && h.overall < 100).length
-  const notStarted = overallStats.filter(h => h.overall === 0).length
-
-  // หา advance status ล่าสุดของแต่ละ รพ.
-  const getAdvanceStatus = (hospId) => {
-    const hospPlanIds = projectPlans.filter(p => String(p.hospitalId) === String(hospId)).map(p => String(p.id))
-    const recs = advanceRecords.filter(r => hospPlanIds.includes(String(r.planId)))
+  // หา advance status ล่าสุดของแต่ละ "โครงการ" (plan)
+  const getAdvanceStatusByPlan = (planId) => {
+    const recs = advanceRecords.filter(r => String(r.planId) === String(planId))
     if (!recs.length) return null
     return recs.reduce((latest, r) => (r.id > latest.id ? r : latest)).status
   }
 
+  const planYear = (p) => toBE(p.startDate)
+
+  // 1 แถว = 1 โครงการ (project plan)
+  const filtered = projectPlans.filter(p => {
+    const h = hospById(p.hospitalId)
+    if (filterProvince && (!h || h.province !== filterProvince)) return false
+    if (filterHospital && String(p.hospitalId) !== String(filterHospital)) return false
+    if (filterPlanStatus && p.status !== filterPlanStatus) return false
+    if (filterYear) {
+      const py = planYear(p)
+      if (py != null && String(py) !== String(filterYear)) return false
+    }
+    return true
+  })
+
+  // เรียงตามวันที่เริ่มโครงการน้อย → มาก (โครงการที่ไม่มีวันเริ่ม → ไปท้าย)
+  const sorted = [...filtered].sort((a, b) => {
+    const sa = a.startDate || '9999-99-99'
+    const sb = b.startDate || '9999-99-99'
+    if (sa !== sb) return sa.localeCompare(sb)
+    return a.id - b.id
+  })
+
+  const displayed = sorted.slice(0, limit)
+
+  // นับสถิติตาม "โครงการ"
+  const isClosed = (s) => s === 'closed'
+  const isInProgress = (s) => ['planning', 'advance', 'inprog', 'deliver', 'accounting'].includes(s)
+  const isWaiting = (s) => !s || s === 'waiting'
+
+  const totalProjects = filtered.length
+  const closedCount = filtered.filter(p => isClosed(p.status)).length
+  const inProgressCount = filtered.filter(p => isInProgress(p.status)).length
+  const waitingCount = filtered.filter(p => isWaiting(p.status)).length
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22, color: '#1e3a5f', marginBottom: 4 }}>📊 ผลสรุปโครงการภาพรวมทุก รพ.</h2>
-        <p style={{ color: '#64748b', fontSize: 13 }}>ติดตามความคืบหน้าการติดตั้งและเตรียมความพร้อมระบบ AP/AR ของโรงพยาบาลทั้งหมด</p>
+        <h2 style={{ fontSize: 22, color: '#1e3a5f', marginBottom: 4 }}>📊 ผลสรุปโครงการภาพรวม</h2>
+        <p style={{ color: '#64748b', fontSize: 13 }}>ติดตามความคืบหน้ารายโครงการ — แสดง 1 แถวต่อ 1 โครงการ</p>
       </div>
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
-        <StatCard icon="🏥" label="โรงพยาบาลทั้งหมด" value={filtered.length} color="#1e3a5f" />
-        <StatCard icon="✅" label="เสร็จสิ้น" value={done} color="#16a34a" />
-        <StatCard icon="🔄" label="กำลังดำเนินการ" value={inProgress} color="#d97706" />
-        <StatCard icon="⏳" label="ยังไม่เริ่ม" value={notStarted} color="#64748b" />
+        <StatCard icon="📋" label="โครงการทั้งหมด" value={totalProjects} color="#1e3a5f" />
+        <StatCard icon="✅" label="ปิดโครงการ" value={closedCount} color="#16a34a" />
+        <StatCard icon="🔄" label="กำลังดำเนินการ" value={inProgressCount} color="#d97706" />
+        <StatCard icon="⏳" label="รอดำเนินการ" value={waitingCount} color="#64748b" />
       </div>
 
       {/* Filter */}
@@ -176,7 +180,7 @@ export default function ProjectSummary() {
             style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
             {[10, 20, 30, 50, 100, 999].map(n => <option key={n} value={n}>{n === 999 ? 'ทั้งหมด' : n}</option>)}
           </select>
-          <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>จาก {filtered.length} รพ.</span>
+          <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>จาก {filtered.length} โครงการ</span>
         </div>
       </div>
 
@@ -186,7 +190,7 @@ export default function ProjectSummary() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['#', 'โรงพยาบาล', 'จังหวัด', 'ประเภท', 'Advance', 'แผนปฏิบัติงาน', 'ส่งมอบ', 'ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน'].map(h => (
+                {['#', 'โรงพยาบาล', 'โครงการ', 'Advance', 'แผนปฏิบัติงาน', 'ส่งมอบ', 'ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน'].map(h => (
                   <th key={h} style={{
                     padding: '12px 14px', textAlign: 'left', fontSize: 12,
                     fontWeight: 700, color: '#374151', borderBottom: '2px solid #e2e8f0',
@@ -196,26 +200,28 @@ export default function ProjectSummary() {
               </tr>
             </thead>
             <tbody>
-              {displayed.map((hosp, idx) => {
-                const b = getProgress('basic', hosp.id)
-                const f = getProgress('form', hosp.id)
-                const r = getProgress('report', hosp.id)
-                const mp = getProgress('masterplan', hosp.id)
-                const advStatus = getAdvanceStatus(hosp.id)
-                const planStatus = getPlanStatus(hosp.id)
+              {displayed.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                    ไม่พบโครงการตามตัวกรองที่เลือก
+                  </td>
+                </tr>
+              )}
+              {displayed.map((plan, idx) => {
+                const hosp = hospById(plan.hospitalId) || { name: '-', type: '', province: '' }
+                const b = getProgress('basic', plan.hospitalId)
+                const f = getProgress('form', plan.hospitalId)
+                const r = getProgress('report', plan.hospitalId)
+                const mp = getProgress('masterplan', plan.hospitalId)
+                const advStatus = getAdvanceStatusByPlan(plan.id)
                 return (
-                  <tr key={hosp.id} style={{ borderBottom: '1px solid #f1f5f9' }}
+                  <tr key={plan.id} style={{ borderBottom: '1px solid #f1f5f9' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                     onMouseLeave={e => e.currentTarget.style.background = ''}>
                     <td style={{ padding: '14px', color: '#94a3b8', fontSize: 13 }}>{idx + 1}</td>
                     <td style={{ padding: '14px', fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{hosp.name}</td>
-                    <td style={{ padding: '14px', color: '#64748b', fontSize: 13 }}>{hosp.province}</td>
-                    <td style={{ padding: '14px' }}>
-                      <span style={{
-                        padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                        background: hosp.type === 'A' ? '#eff6ff' : hosp.type === 'S' ? '#f0fdf4' : '#fef9c3',
-                        color: hosp.type === 'A' ? '#1d4ed8' : hosp.type === 'S' ? '#15803d' : '#854d0e',
-                      }}>{hosp.type}</span>
+                    <td style={{ padding: '14px', color: '#1e293b', fontSize: 13, fontWeight: 500, minWidth: 240 }}>
+                      {plan.projectName || <span style={{ color: '#94a3b8' }}>-</span>}
                     </td>
                     <td style={{ padding: '14px' }}>
                       <StatusBadge value={advStatus} statusList={ADV_STATUS} emptyLabel="-" />
@@ -229,7 +235,7 @@ export default function ProjectSummary() {
                       ) : <span style={{ color: '#94a3b8', fontSize: 12 }}>-</span>}
                     </td>
                     <td style={{ padding: '14px' }}>
-                      <StatusBadge value={planStatus} statusList={PROJECT_STATUS} emptyLabel="-" />
+                      <StatusBadge value={plan.status} statusList={PROJECT_STATUS} emptyLabel="-" />
                     </td>
                     {[b, f, r].map((p, i) => (
                       <td key={i} style={{ padding: '14px', minWidth: 100 }}>

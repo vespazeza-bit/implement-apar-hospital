@@ -43,6 +43,17 @@ const formatDate = (d) => {
 }
 const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
 
+// แปลงสตริงวันที่ที่ปีเป็น พ.ศ. (≥2400) ให้เป็น ค.ศ. เพื่อให้ new Date() คำนวณถูก
+// รองรับข้อมูลใน DB ที่ปนทั้ง ค.ศ. และ พ.ศ.
+const toCEDateStr = (d) => {
+  if (!d) return ''
+  const s = String(d).slice(0, 10)
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return s
+  const y = parseInt(m[1], 10)
+  return y >= 2400 ? `${y - 543}-${m[2]}-${m[3]}` : s
+}
+
 function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate()
 }
@@ -135,13 +146,21 @@ export default function Calendar() {
   const [editForm, setEditForm] = useState(null)   // null = closed, object = open
 
   // ── Plan data ──────────────────────────────────────────────────────────────
+  // normalize ทุกฟิลด์วันที่ให้เป็น ค.ศ. ก่อนส่งต่อให้ตรรกะอื่น
   const enrichedPlans = projectPlans
     .filter(p => p.startDate)
-    .map(p => ({
-      ...p,
-      hospitalName: hospitals.find(h => String(h.id) === String(p.hospitalId))?.name || '',
-      endDate: p.endDate || p.startDate,
-    }))
+    .map(p => {
+      const startDate = toCEDateStr(p.startDate)
+      const endDate = toCEDateStr(p.endDate) || startDate
+      return {
+        ...p,
+        hospitalName: hospitals.find(h => String(h.id) === String(p.hospitalId))?.name || '',
+        startDate,
+        endDate,
+        revisit1: toCEDateStr(p.revisit1),
+        revisit2: toCEDateStr(p.revisit2),
+      }
+    })
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const prevPeriod = () => {

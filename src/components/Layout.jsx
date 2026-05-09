@@ -4,8 +4,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 const MENU = [
   { path: '/hospitals', icon: '🏥', label: 'โรงพยาบาล', sub: 'จัดการข้อมูล รพ.' },
   { path: '/team', icon: '👥', label: 'ทีมงาน', sub: 'จัดการสมาชิก' },
-  { path: '/summary', icon: '📊', label: 'ผลสรุปโครงการภาพรวม', sub: 'ทุก รพ.' },
-  { path: '/workplan', icon: '📋', label: 'แผนการปฏิบัติงาน', sub: '' },
+  { path: '/workplan', icon: '📋', label: 'แผนการปฏิบัติงาน', sub: 'แผน + ความคืบหน้า' },
   { path: '/calendar', icon: '📅', label: 'ปฏิทินปฏิบัติงาน', sub: '' },
   { path: '/advance', icon: '⚙️', label: 'Advance', sub: 'เตรียมความพร้อม' },
   { path: '/checklist-basic', icon: '🗂️', label: 'Check List', sub: 'ข้อมูลพื้นฐาน' },
