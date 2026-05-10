@@ -75,9 +75,9 @@ export default function Login() {
     <div style={S.page}>
       <div style={S.card}>
         <div style={S.logo}>
-          <div style={S.logoIcon}>🏥</div>
+          <div style={S.logoIcon}>🛠️</div>
           <div style={S.title}>ระบบติดตามการติดตั้ง AP/AR</div>
-          <div style={S.subtitle}>ระบบบัญชีเจ้าหนี้ – ลูกหนี้ โรงพยาบาล</div>
+          <div style={S.subtitle}>AP/AR Implementation Tracker — ระบบบัญชีเจ้าหนี้/ลูกหนี้ โรงพยาบาล</div>
         </div>
 
         <div style={S.tabs}>
@@ -127,7 +127,7 @@ export default function Login() {
         )}
 
         <div style={{ textAlign: 'center', marginTop: 20, fontSize: 12, color: '#94a3b8' }}>
-          ระบบติดตามการติดตั้งและเตรียมความพร้อม AP/AR
+          AP/AR Implementation Tracker
         </div>
 
         {/* DB Status */}

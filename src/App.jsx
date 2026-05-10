@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import Login from './pages/Login'
 import Layout from './components/Layout'
+import Dashboard from './pages/Dashboard'
 import WorkPlan from './pages/WorkPlan'
 import Advance from './pages/Advance'
 import ChecklistBasic from './pages/ChecklistBasic'
@@ -27,7 +28,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-            <Route index element={<Navigate to="/hospitals" replace />} />
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="hospitals" element={<Hospitals />} />
             <Route path="team" element={<Team />} />
             <Route path="summary" element={<Navigate to="/workplan" replace />} />

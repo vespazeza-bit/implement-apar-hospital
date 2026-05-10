@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 
 const MENU = [
+  { path: '/dashboard', icon: '📊', label: 'Dashboard', sub: 'ภาพรวมทั้งระบบ' },
   { path: '/hospitals', icon: '🏥', label: 'โรงพยาบาล', sub: 'จัดการข้อมูล รพ.' },
   { path: '/team', icon: '👥', label: 'ทีมงาน', sub: 'จัดการสมาชิก' },
   { path: '/workplan', icon: '📋', label: 'แผนการปฏิบัติงาน', sub: 'แผน + ความคืบหน้า' },
@@ -60,11 +61,11 @@ export default function Layout() {
             background: 'linear-gradient(135deg, #0891b2, #38bdf8)',
             borderRadius: 10, display: 'flex', alignItems: 'center',
             justifyContent: 'center', fontSize: 18,
-          }}>🏥</div>
+          }}>🛠️</div>
           {!collapsed && (
             <div>
-              <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>ระบบ AP/AR</div>
-              <div style={{ color: '#94a3b8', fontSize: 11 }}>Hospital</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>AP/AR Tracker</div>
+              <div style={{ color: '#94a3b8', fontSize: 11 }}>Implementation</div>
             </div>
           )}
         </div>
@@ -148,8 +149,8 @@ export default function Layout() {
             cursor: 'pointer', fontSize: 18, color: '#64748b', lineHeight: 1,
           }}>☰</button>
           <div style={{ flex: 1 }}>
-            <span style={{ color: '#64748b', fontSize: 13 }}>ระบบติดตามการติดตั้งและเตรียมความพร้อม</span>
-            <span style={{ color: '#1e3a5f', fontWeight: 700, fontSize: 13 }}> | ระบบบัญชีเจ้าหนี้ – ลูกหนี้</span>
+            <span style={{ color: '#1e3a5f', fontWeight: 700, fontSize: 13 }}>ระบบติดตามการติดตั้ง AP/AR</span>
+            <span style={{ color: '#64748b', fontSize: 13 }}> | AP/AR Implementation Tracker</span>
           </div>
           <div style={{
             background: '#eff6ff',
