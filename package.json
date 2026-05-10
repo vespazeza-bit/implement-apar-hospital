@@ -7,6 +7,7 @@
     "start": "node backend/server.js",
     "dev": "vite",
     "build": "vite build",
+    "build:watch": "vite build --watch",
     "lint": "eslint .",
     "preview": "vite preview"
   },
