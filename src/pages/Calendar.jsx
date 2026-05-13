@@ -9,28 +9,34 @@ const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.',
   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 const THAI_DAYS_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
-const DAY_W = 40
-const DAY_W_Y = 8
+const DAY_W = 40   // month view: pixels per day
 const ROW_H = 46
+const YEAR_ROW_H = 72   // year view project: tall card rows
+const YEAR_ROW_H_P = 44  // year view person: compact rows
 const LABEL_W = 230
+
+const QUARTER_COLORS = ['#eff6ff', '#f0fdf4', '#fefce8', '#fff7ed']
 
 const STATUS_COLORS = {
   waiting: '#6b7280', planning: '#ca8a04', advance: '#ea580c',
-  inprog: '#0891b2', deliver: '#1d4ed8', closed: '#16a34a',
+  inprog: '#0891b2', deliver: '#1d4ed8', revisit: '#db2777',
+  accounting: '#7c3aed', closed: '#16a34a',
 }
 const STATUS_LABELS = {
   waiting: 'รอดำเนินการ', planning: 'วางแผนงาน', advance: 'จัดทำ Adv',
-  inprog: 'กำลังดำเนินการ', deliver: 'ส่งมอบงาน', closed: 'ปิดโครงการ',
+  inprog: 'กำลังดำเนินการ', deliver: 'ส่งมอบงาน', revisit: 'Revisit',
+  accounting: 'ส่งต่อบัญชี', closed: 'ปิดโครงการ',
 }
 
 const PROJECT_STATUS = [
-  { value: 'waiting',  label: 'รอดำเนินการ',     color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' },
-  { value: 'planning', label: 'วางแผนงาน',        color: '#ca8a04', bg: '#fefce8', border: '#fde047' },
-  { value: 'advance',  label: 'จัดทำ Adv',         color: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
-  { value: 'inprog',   label: 'กำลังดำเนินการ',   color: '#0891b2', bg: '#ecfeff', border: '#67e8f9' },
-  { value: 'deliver',  label: 'ส่งมอบงาน',        color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
-  { value: 'accounting', label: 'ส่งต่อบัญชี',   color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
-  { value: 'closed',   label: 'ปิดโครงการ',       color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
+  { value: 'waiting',    label: 'รอดำเนินการ',       color: '#6b7280', bg: '#f3f4f6',  border: '#d1d5db' },
+  { value: 'planning',   label: 'วางแผนงาน',          color: '#ca8a04', bg: '#fefce8',  border: '#fde047' },
+  { value: 'advance',    label: 'จัดทำ Adv',           color: '#ea580c', bg: '#fff7ed',  border: '#fdba74' },
+  { value: 'inprog',     label: 'กำลังดำเนินการ',     color: '#0891b2', bg: '#ecfeff',  border: '#67e8f9' },
+  { value: 'deliver',    label: 'ส่งมอบงาน',          color: '#1d4ed8', bg: '#eff6ff',  border: '#93c5fd' },
+  { value: 'revisit',    label: 'Revisit',             color: '#db2777', bg: '#fdf2f8',  border: '#f9a8d4' },
+  { value: 'accounting', label: 'ส่งต่อบัญชี',       color: '#7c3aed', bg: '#f5f3ff',  border: '#c4b5fd' },
+  { value: 'closed',     label: 'ปิดโครงการ',         color: '#16a34a', bg: '#f0fdf4',  border: '#86efac' },
 ]
 const INSTALL_TYPES = ['ติดตั้งระบบ', 'เข้า Revisit', 'เข้า Office']
 
@@ -39,12 +45,13 @@ const formatDate = (d) => {
   const s = String(d).slice(0, 10)
   if (!s.includes('-')) return '-'
   const [y, m, day] = s.split('-')
-  return `${day}/${m}/${y}`
+  const numY = parseInt(y, 10)
+  // แสดงเป็น พ.ศ. เสมอ (บวก 543 ถ้าเป็น ค.ศ.)
+  const beYear = numY < 2400 ? numY + 543 : numY
+  return `${day}/${m}/${beYear}`
 }
 const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
 
-// แปลงสตริงวันที่ที่ปีเป็น พ.ศ. (≥2400) ให้เป็น ค.ศ. เพื่อให้ new Date() คำนวณถูก
-// รองรับข้อมูลใน DB ที่ปนทั้ง ค.ศ. และ พ.ศ.
 const toCEDateStr = (d) => {
   if (!d) return ''
   const s = String(d).slice(0, 10)
@@ -64,8 +71,7 @@ function dayOfYear(dateStr, year) {
   return Math.max(1, Math.round((d - start) / 86400000) + 1)
 }
 
-
-// ─── TeamInput (inline for edit modal) ───────────────────────────────────────
+// ─── TeamInput ────────────────────────────────────────────────────────────────
 function TeamInput({ team, onChange }) {
   const allMembers = (() => {
     try { return JSON.parse(localStorage.getItem('teamMembers') || '[]') } catch { return [] }
@@ -134,24 +140,27 @@ export default function Calendar() {
   const { hospitals, projectPlans, teamMembers, updatePlan } = useApp()
   const today = new Date()
 
-  const [viewYear, setViewYear] = useState(today.getFullYear())
+  const [viewYear, setViewYear]   = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
-  const [viewMode, setViewMode] = useState('project') // 'project'|'ติดตั้งระบบ'|'เข้า Revisit'|'เข้า Office'|'person'
-  const [timeRange, setTimeRange] = useState('month') // 'month' | 'year'
+  const [viewMode, setViewMode]   = useState('project')
+  const [timeRange, setTimeRange] = useState('month')
 
   const viewBy = viewMode === 'person' ? 'person' : 'project'
   const filterInstallType = INSTALL_TYPES.includes(viewMode) ? viewMode : ''
 
-  // Edit modal
-  const [editForm, setEditForm] = useState(null)   // null = closed, object = open
+  const [editForm, setEditForm] = useState(null)
+  const [tooltip, setTooltip] = useState(null) // { plan, x, y }
 
-  // ── Plan data ──────────────────────────────────────────────────────────────
-  // normalize ทุกฟิลด์วันที่ให้เป็น ค.ศ. ก่อนส่งต่อให้ตรรกะอื่น
+  const showTooltip = (plan, e) => setTooltip({ plan, x: e.clientX, y: e.clientY })
+  const moveTooltip = (e) => setTooltip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hideTooltip = () => setTooltip(null)
+
+  // ── Normalize plan dates ──────────────────────────────────────────────────
   const enrichedPlans = projectPlans
     .filter(p => p.startDate)
     .map(p => {
       const startDate = toCEDateStr(p.startDate)
-      const endDate = toCEDateStr(p.endDate) || startDate
+      const endDate   = toCEDateStr(p.endDate) || startDate
       return {
         ...p,
         hospitalName: hospitals.find(h => String(h.id) === String(p.hospitalId))?.name || '',
@@ -172,20 +181,28 @@ export default function Calendar() {
     if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0) } else setViewMonth(m => m + 1)
   }
 
-  // ── Dimensions ────────────────────────────────────────────────────────────
+  // ── Month view dimensions ─────────────────────────────────────────────────
   const daysInMonth = getDaysInMonth(viewYear, viewMonth)
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
-  const monthCols = (() => {
-    let off = 0
+  // ── Year view — percentage-based (responsive, all 12 months always visible) ─
+  const totalDaysInYear = Array.from({ length: 12 }, (_, m) => getDaysInMonth(viewYear, m))
+    .reduce((a, b) => a + b, 0)
+
+  const monthColsPct = (() => {
+    let offDays = 0
     return Array.from({ length: 12 }, (_, m) => {
-      const w = getDaysInMonth(viewYear, m) * DAY_W_Y
-      const col = { m, off, w }
-      off += w
+      const d = getDaysInMonth(viewYear, m)
+      const col = {
+        m,
+        leftPct:  offDays / totalDaysInYear * 100,
+        widthPct: d / totalDaysInYear * 100,
+        daysInM:  d,
+      }
+      offDays += d
       return col
     })
   })()
-  const totalYearW = monthCols[11].off + monthCols[11].w
 
   const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
 
@@ -227,7 +244,7 @@ export default function Calendar() {
     }))
   }
 
-  // ── Bar helpers ───────────────────────────────────────────────────────────
+  // ── Bar helpers — month view (pixels) ─────────────────────────────────────
   const getBarMonth = (s, e) => {
     if (!s) return null
     const sd = new Date(s), ed = new Date(e || s)
@@ -236,36 +253,44 @@ export default function Calendar() {
     if (sd > me || ed < ms) return null
     const sd2 = sd < ms ? 1 : sd.getDate()
     const ed2 = ed > me ? daysInMonth : ed.getDate()
-    return { left: (sd2 - 1) * DAY_W, width: (ed2 - sd2 + 1) * DAY_W - 4 }
+    return { left: (sd2 - 1) * DAY_W, width: (ed2 - sd2 + 1) * DAY_W - 4, isPct: false }
   }
 
+  // ── Bar helpers — year view (percentage) ──────────────────────────────────
   const getBarYear = (s, e) => {
     if (!s) return null
     const sd = new Date(s), ed = new Date(e || s)
     const ys = new Date(viewYear, 0, 1), ye = new Date(viewYear, 11, 31)
     if (sd > ye || ed < ys) return null
-    const totalDays = new Date(viewYear, 1, 29).getDate() === 29 ? 366 : 365
-    const sDay = sd < ys ? 1 : dayOfYear(s, viewYear)
-    const eDay = ed > ye ? totalDays : dayOfYear(e || s, viewYear)
-    return { left: (sDay - 1) * DAY_W_Y, width: Math.max(DAY_W_Y, (eDay - sDay + 1) * DAY_W_Y - 2) }
+    const sDay = sd < ys ? 0 : dayOfYear(s, viewYear) - 1
+    const eDay = ed > ye ? totalDaysInYear : dayOfYear(e || s, viewYear)
+    const leftPct  = sDay / totalDaysInYear * 100
+    const widthPct = Math.max(0.4, (eDay - sDay) / totalDaysInYear * 100)
+    return { leftPct, widthPct, isPct: true }
   }
 
   const getBar = (s, e) => timeRange === 'month' ? getBarMonth(s, e) : getBarYear(s, e)
 
-  const getDow = (d) => new Date(viewYear, viewMonth, d).getDay()
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const getDow    = (d) => new Date(viewYear, viewMonth, d).getDay()
   const isWeekend = (d) => { const dw = getDow(d); return dw === 0 || dw === 6 }
-  const isToday = (d) => d === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear()
-  const todayLineLeft = timeRange === 'year' && viewYear === today.getFullYear()
-    ? (dayOfYear(today.toISOString().split('T')[0], viewYear) - 1) * DAY_W_Y : null
+  const isToday   = (d) => d === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear()
 
-  const totalW = LABEL_W + (timeRange === 'month' ? daysInMonth * DAY_W : totalYearW)
+  // Today line position
+  const todayLinePx  = timeRange === 'month' && viewMonth === today.getMonth() && viewYear === today.getFullYear()
+    ? (today.getDate() - 1) * DAY_W + DAY_W / 2 : null
+  const todayLinePct = timeRange === 'year' && viewYear === today.getFullYear()
+    ? (dayOfYear(today.toISOString().split('T')[0], viewYear) - 1) / totalDaysInYear * 100 : null
+
+  // Width for horizontal scroll container
+  const totalW = LABEL_W + (timeRange === 'month' ? daysInMonth * DAY_W : 0)
 
   // ── Edit modal ────────────────────────────────────────────────────────────
   const openEdit = (plan) => setEditForm({
     ...plan,
     onlineStart: toDateStr(plan.onlineStart), onlineEnd: toDateStr(plan.onlineEnd),
-    startDate: toDateStr(plan.startDate), endDate: toDateStr(plan.endDate),
-    revisit1: toDateStr(plan.revisit1), revisit2: toDateStr(plan.revisit2),
+    startDate:   toDateStr(plan.startDate),   endDate:   toDateStr(plan.endDate),
+    revisit1:    toDateStr(plan.revisit1),    revisit2:  toDateStr(plan.revisit2),
   })
   const setEF = (k) => (e) => setEditForm(p => ({ ...p, [k]: e.target.value }))
 
@@ -288,14 +313,10 @@ export default function Calendar() {
       <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', marginBottom: 16, border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
 
-          {/* แสดงแบบ — รวมประเภทการติดตั้ง */}
           <div>
             <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, marginBottom: 5, letterSpacing: 0.3 }}>แสดงแบบ</div>
-            <select
-              value={viewMode}
-              onChange={e => setViewMode(e.target.value)}
-              style={{ padding: '8px 14px', border: '1.5px solid #1e3a5f', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#1e3a5f', background: '#eff6ff', cursor: 'pointer', minWidth: 190 }}
-            >
+            <select value={viewMode} onChange={e => setViewMode(e.target.value)}
+              style={{ padding: '8px 14px', border: '1.5px solid #1e3a5f', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#1e3a5f', background: '#eff6ff', cursor: 'pointer', minWidth: 190 }}>
               <option value="project">📋 ตามโครงการ (ทั้งหมด)</option>
               <option value="เข้า Revisit">🔄 เข้า Revisit</option>
               <option value="เข้า Office">🏢 เข้า Office</option>
@@ -303,38 +324,25 @@ export default function Calendar() {
             </select>
           </div>
 
-          {/* ช่วงเวลา — dropdown */}
           <div>
             <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, marginBottom: 5, letterSpacing: 0.3 }}>ช่วงเวลา</div>
-            <select
-              value={timeRange}
-              onChange={e => setTimeRange(e.target.value)}
-              style={{ padding: '8px 14px', border: '1.5px solid #0891b2', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#0891b2', background: '#f0f9ff', cursor: 'pointer', minWidth: 130 }}
-            >
+            <select value={timeRange} onChange={e => setTimeRange(e.target.value)}
+              style={{ padding: '8px 14px', border: '1.5px solid #0891b2', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#0891b2', background: '#f0f9ff', cursor: 'pointer', minWidth: 130 }}>
               <option value="month">📅 รายเดือน</option>
               <option value="year">📆 รายปี</option>
             </select>
           </div>
 
-          {/* เลือกเดือน (แสดงเมื่อ timeRange = month) */}
           {timeRange === 'month' && (
             <div>
               <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, marginBottom: 5, letterSpacing: 0.3 }}>เดือนที่แสดง</div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <select
-                  value={viewMonth}
-                  onChange={e => setViewMonth(Number(e.target.value))}
-                  style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 130 }}
-                >
-                  {THAI_MONTHS.map((m, i) => (
-                    <option key={i} value={i}>{m}</option>
-                  ))}
+                <select value={viewMonth} onChange={e => setViewMonth(Number(e.target.value))}
+                  style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 130 }}>
+                  {THAI_MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
                 </select>
-                <select
-                  value={viewYear}
-                  onChange={e => setViewYear(Number(e.target.value))}
-                  style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 100 }}
-                >
+                <select value={viewYear} onChange={e => setViewYear(Number(e.target.value))}
+                  style={{ padding: '8px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 100 }}>
                   {Array.from({ length: 11 }, (_, i) => today.getFullYear() - 5 + i).map(y => (
                     <option key={y} value={y}>พ.ศ. {y + 543}</option>
                   ))}
@@ -343,15 +351,11 @@ export default function Calendar() {
             </div>
           )}
 
-          {/* เลือกปี (แสดงเมื่อ timeRange = year) */}
           {timeRange === 'year' && (
             <div>
               <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, marginBottom: 5, letterSpacing: 0.3 }}>ปีที่แสดง</div>
-              <select
-                value={viewYear}
-                onChange={e => setViewYear(Number(e.target.value))}
-                style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 140 }}
-              >
+              <select value={viewYear} onChange={e => setViewYear(Number(e.target.value))}
+                style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, minWidth: 140 }}>
                 {Array.from({ length: 11 }, (_, i) => today.getFullYear() - 5 + i).map(y => (
                   <option key={y} value={y}>พ.ศ. {y + 543}</option>
                 ))}
@@ -374,18 +378,21 @@ export default function Calendar() {
           <button onClick={prevPeriod} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '7px 20px', color: '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700 }}>‹</button>
           <div style={{ color: '#fff', fontWeight: 700, fontSize: 20 }}>
             {timeRange === 'month'
-              ? <>{THAI_MONTHS[viewMonth]} {viewYear + 543}<span style={{ fontSize: 13, fontWeight: 400, color: '#94a3b8', marginLeft: 12 }}>{viewYear}</span></>
-              : `ปี พ.ศ. ${viewYear + 543}  (ค.ศ. ${viewYear})`
-            }
+              ? <>{THAI_MONTHS[viewMonth]} พ.ศ. {viewYear + 543}</>
+
+              : `ปี พ.ศ. ${viewYear + 543}`}
           </div>
           <button onClick={nextPeriod} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '7px 20px', color: '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700 }}>›</button>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: totalW }}>
+        {/* ═══════════════════════════════════════════════════════════════════
+            MONTH VIEW — pixel-based, horizontal scroll
+        ════════════════════════════════════════════════════════════════════ */}
+        {timeRange === 'month' && (
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: totalW }}>
 
-            {/* Month header */}
-            {timeRange === 'month' && (
+              {/* Month header */}
               <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 20 }}>
                 <div style={{ width: LABEL_W, minWidth: LABEL_W, padding: '8px 16px', fontSize: 12, fontWeight: 700, color: '#64748b', borderRight: '2px solid #e2e8f0', background: '#f1f5f9', display: 'flex', alignItems: 'center' }}>
                   {viewBy === 'person' ? '👤 ทีมงาน' : '📋 โครงการ / รพ.'}
@@ -407,163 +414,307 @@ export default function Calendar() {
                   })}
                 </div>
               </div>
-            )}
 
-            {/* Year header */}
-            {timeRange === 'year' && (
-              <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 20 }}>
-                <div style={{ width: LABEL_W, minWidth: LABEL_W, padding: '8px 16px', fontSize: 12, fontWeight: 700, color: '#64748b', borderRight: '2px solid #e2e8f0', background: '#f1f5f9', display: 'flex', alignItems: 'center' }}>
-                  {viewBy === 'person' ? '👤 ทีมงาน' : '📋 โครงการ / รพ.'}
-                </div>
-                <div style={{ position: 'relative', height: 46, flex: 1 }}>
-                  {monthCols.map(({ m, off, w }) => {
-                    const isCur = m === today.getMonth() && viewYear === today.getFullYear()
-                    return (
-                      <div key={m} style={{
-                        position: 'absolute', left: off, width: w, top: 0, height: 46,
-                        borderRight: '2px solid #e2e8f0',
-                        background: isCur ? '#eff6ff' : m % 2 === 0 ? '#f8fafc' : '#fff',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <div style={{ fontWeight: 700, fontSize: 12, color: isCur ? '#1e3a5f' : '#374151', whiteSpace: 'nowrap' }}>{THAI_MONTHS_SHORT[m]}</div>
-                        <div style={{ fontSize: 9, color: '#94a3b8' }}>{getDaysInMonth(viewYear, m)} วัน</div>
-                      </div>
-                    )
-                  })}
-                </div>
+              {/* Section label */}
+              {rows.length > 0 && <SectionLabel viewBy={viewBy} count={rows.length} />}
+
+              {/* Rows */}
+              {rows.length === 0 ? <EmptyState /> : rows.map(row => {
+                const nPlans = row.plans.length
+                const dynamicH = Math.max(ROW_H, nPlans > 1 ? nPlans * 30 + 10 : ROW_H)
+                return (
+                  <div key={row.key} style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', minHeight: dynamicH, alignItems: 'stretch' }}>
+                    <RowLabel row={row} viewBy={viewBy} compact={false} />
+                    <div style={{ position: 'relative', flex: 1, minHeight: dynamicH, overflow: 'hidden' }}>
+                      {/* Weekend bg */}
+                      {days.map(d => isWeekend(d) && (
+                        <div key={d} style={{ position: 'absolute', left: (d - 1) * DAY_W, top: 0, width: DAY_W, height: '100%', background: 'rgba(254,243,199,0.4)', pointerEvents: 'none' }} />
+                      ))}
+                      {/* Today line */}
+                      {todayLinePx !== null && (
+                        <div style={{ position: 'absolute', left: todayLinePx, top: 0, bottom: 0, width: 2, background: '#dc2626', opacity: 0.35, pointerEvents: 'none' }} />
+                      )}
+                      {row.plans.map((plan, pi) => {
+                        const bar = getBarMonth(plan.startDate, plan.endDate)
+                        const r1  = plan.revisit1 ? getBarMonth(plan.revisit1, plan.revisit1) : null
+                        const r2  = plan.revisit2 ? getBarMonth(plan.revisit2, plan.revisit2) : null
+                        const sc  = STATUS_COLORS[plan.status] || '#059669'
+                        const barTop = 6 + pi * (nPlans > 1 ? 30 : 0)
+                        const barH   = Math.max(12, (nPlans > 1 ? 26 : dynamicH - 12))
+                        const lbl    = getBarLabel(plan, viewBy, viewMode, teamMembers)
+                        return (
+                          <span key={plan.id}>
+                            {bar && (
+                              <BarDiv bar={{ left: bar.left + 2, width: bar.width }} barTop={barTop} barH={barH} sc={sc} label={lbl} plan={plan} onClick={() => openEdit(plan)} />
+                            )}
+                            {r1 && <RevisitDot style={{ left: r1.left + 2 }} barTop={barTop} barH={barH} label="R1" color="#f59e0b" plan={plan} onClick={() => openEdit(plan)} />}
+                            {r2 && <RevisitDot style={{ left: r2.left + 2 }} barTop={barTop} barH={barH} label="R2" color="#7c3aed" plan={plan} onClick={() => openEdit(plan)} />}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            YEAR VIEW — PROJECT/INSTALL MODE: เดือนเป็นแถว, โครงการเป็นการ์ด
+        ════════════════════════════════════════════════════════════════════ */}
+        {timeRange === 'year' && viewBy !== 'person' && (() => {
+          const CARD_H = 74
+          const CARD_GAP = 6
+          const MON_LABEL_W = 160
+          const Q_COLORS = ['#6366f1','#0891b2','#f59e0b','#16a34a']
+          return (
+            <div>
+              {/* Section info */}
+              <div style={{ padding: '8px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 12, color: '#64748b', fontWeight: 600 }}>
+                📋 แสดงตามเดือน — {visiblePlans.length} โครงการ ในปี พ.ศ. {viewYear + 543} • คลิก Bar เพื่อแก้ไขแผนงาน
               </div>
-            )}
+              {THAI_MONTHS.map((monthName, mIdx) => {
+                const monthStart = new Date(viewYear, mIdx, 1)
+                const monthEnd   = new Date(viewYear, mIdx + 1, 0)
+                const daysInM    = getDaysInMonth(viewYear, mIdx)
+                const isCurMonth = mIdx === today.getMonth() && viewYear === today.getFullYear()
+                const q          = Math.floor(mIdx / 3)
+                const qColor     = Q_COLORS[q]
 
-            {/* Section label */}
-            {rows.length > 0 && (
-              <div style={{
-                padding: '5px 16px', display: 'flex', alignItems: 'center', gap: 6,
-                background: viewBy === 'person' ? '#eff6ff' : '#f0fdf4',
-                borderBottom: `1px solid ${viewBy === 'person' ? '#bfdbfe' : '#bbf7d0'}`,
-              }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: viewBy === 'person' ? '#1d4ed8' : '#15803d' }}>
-                  {viewBy === 'person' ? `👥 แสดงตามรายคน (${rows.length} คน)` : `🏥 แสดงตามโครงการ (${rows.length} โครงการ)`}
-                </span>
-                <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>คลิกที่ Bar เพื่อแก้ไขแผนงาน</span>
-              </div>
-            )}
+                // โครงการที่ทับซ้อนกับเดือนนี้
+                const monthPlans = visiblePlans.filter(p => {
+                  if (!p.startDate) return false
+                  const s = new Date(p.startDate)
+                  const e = new Date(p.endDate || p.startDate)
+                  return s <= monthEnd && e >= monthStart
+                })
 
-            {/* Rows */}
-            {rows.length === 0 ? (
-              <div style={{ padding: '56px 0', textAlign: 'center', color: '#94a3b8' }}>
-                <div style={{ fontSize: 44, marginBottom: 12 }}>📅</div>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>ไม่มีแผนงานในช่วงเวลานี้</div>
-                <div style={{ fontSize: 13 }}>ลองเปลี่ยนช่วงเวลา หรือเพิ่มแผนงานในเมนูแผนการปฏิบัติงาน</div>
-              </div>
-            ) : rows.map(row => {
-              const nPlans = row.plans.length
-              const compactMode = viewBy === 'person' && timeRange === 'year'
-              const rowUnit = compactMode ? 35 : 30
-              const minH = compactMode ? 38 : ROW_H
-
-              // Lane-packing: assign non-overlapping plans to same lane
-              const laneMap = new Map() // plan.id -> lane index
-              if (compactMode) {
+                // Lane-pack ภายในเดือน
+                const laneMap  = new Map()
                 const laneEnds = []
-                const sorted = [...row.plans].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+                const sorted = [...monthPlans].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
                 sorted.forEach(plan => {
-                  const s = plan.startDate || ''
-                  const lane = laneEnds.findIndex(end => s > end)
-                  const l = lane === -1 ? laneEnds.length : lane
-                  laneEnds[l] = plan.endDate || plan.startDate || ''
+                  const s      = new Date(plan.startDate)
+                  const e      = new Date(plan.endDate || plan.startDate)
+                  const effS   = s < monthStart ? monthStart : s
+                  const effE   = e > monthEnd   ? monthEnd   : e
+                  const startD = effS.getDate()
+                  const endD   = effE.getDate()
+                  const lane   = laneEnds.findIndex(ed => startD > ed)
+                  const l      = lane === -1 ? laneEnds.length : lane
+                  laneEnds[l]  = endD
                   laneMap.set(plan.id, l)
                 })
-              } else {
-                row.plans.forEach((plan, i) => laneMap.set(plan.id, i))
-              }
-              const numLanes = compactMode ? Math.max(1, ...[...laneMap.values()].map(l => l + 1)) : nPlans
-              const dynamicH = Math.max(minH, numLanes > 1 ? numLanes * rowUnit + 6 : minH)
-              return (
-                <div key={row.key} style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', minHeight: dynamicH, alignItems: 'stretch' }}>
-                  {/* Label */}
-                  <div style={{ position: 'sticky', left: 0, zIndex: 10, width: LABEL_W, minWidth: LABEL_W, padding: compactMode ? '4px 16px' : '8px 16px', borderRight: '2px solid #e2e8f0', background: viewBy === 'person' ? '#fdfeff' : '#fafffe', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
-                    <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</div>
-                    {row.sub1 && <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub1}</div>}
-                    {row.sub2 && <div style={{ fontSize: 11, color: '#0891b2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub2}</div>}
+
+                const numLanes = monthPlans.length === 0 ? 0 : Math.max(1, ...[...laneMap.values()].map(l => l + 1))
+                const rowH     = numLanes === 0 ? 46 : numLanes * (CARD_H + CARD_GAP) + 14
+
+                return (
+                  <div key={mIdx} style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', minHeight: rowH, alignItems: 'stretch' }}>
+
+                    {/* ชื่อเดือน */}
+                    <div style={{
+                      width: MON_LABEL_W, minWidth: MON_LABEL_W, flexShrink: 0,
+                      padding: '10px 14px',
+                      background: isCurMonth ? '#dbeafe' : QUARTER_COLORS[q],
+                      borderRight: '2px solid #e2e8f0',
+                      borderLeft: `4px solid ${isCurMonth ? '#0891b2' : qColor}`,
+                      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
+                    }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: isCurMonth ? '#1e3a5f' : '#374151' }}>{monthName}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{daysInM} วัน</div>
+                      {monthPlans.length > 0 && (
+                        <div style={{ fontSize: 11, color: qColor, fontWeight: 600 }}>{monthPlans.length} โครงการ</div>
+                      )}
+                    </div>
+
+                    {/* พื้นที่การ์ด */}
+                    <div style={{ position: 'relative', flex: 1, minHeight: rowH, background: isCurMonth ? '#f0f9ff55' : mIdx % 2 === 0 ? `${QUARTER_COLORS[q]}44` : '#fff' }}>
+
+                      {/* เส้นแบ่งสัปดาห์ (วันที่ 7, 14, 21, 28) */}
+                      {[7, 14, 21, 28].map(d => d <= daysInM && (
+                        <div key={d} style={{ position: 'absolute', left: `${(d - 0.5) / daysInM * 100}%`, top: 0, bottom: 0, width: 1, background: 'rgba(0,0,0,0.07)', pointerEvents: 'none' }} />
+                      ))}
+
+                      {/* เส้นวันนี้ */}
+                      {isCurMonth && (
+                        <div style={{ position: 'absolute', left: `${(today.getDate() - 1) / daysInM * 100}%`, top: 0, bottom: 0, width: 2, background: '#dc2626', opacity: 0.5, zIndex: 4, pointerEvents: 'none' }} />
+                      )}
+
+                      {/* การ์ดโครงการ */}
+                      {monthPlans.map(plan => {
+                        const sc      = STATUS_COLORS[plan.status] || '#059669'
+                        const s       = new Date(plan.startDate)
+                        const e       = new Date(plan.endDate || plan.startDate)
+                        const effS    = s < monthStart ? monthStart : s
+                        const effE    = e > monthEnd   ? monthEnd   : e
+                        const startD  = effS.getDate()
+                        const endD    = effE.getDate()
+                        const leftPct = (startD - 1) / daysInM * 100
+                        const wPct    = Math.max(1.5, (endD - startD + 1) / daysInM * 100)
+                        const lane    = laneMap.get(plan.id) ?? 0
+                        const cardTop = 7 + lane * (CARD_H + CARD_GAP)
+                        const team    = (plan.team || []).map(m => m.name?.split(' ')[0] || m.name).filter(Boolean)
+
+                        return (
+                          <div
+                            key={plan.id}
+                            onClick={() => openEdit(plan)}
+                            onMouseEnter={ev => { ev.currentTarget.style.boxShadow = `0 4px 16px ${sc}88`; showTooltip(plan, ev) }}
+                            onMouseMove={moveTooltip}
+                            onMouseLeave={ev => { ev.currentTarget.style.boxShadow = `0 2px 8px ${sc}44`; hideTooltip() }}
+                            style={{
+                              position: 'absolute',
+                              left:  `calc(${leftPct}% + 2px)`,
+                              width: `calc(${wPct}%  - 4px)`,
+                              minWidth: 10,
+                              top: cardTop, height: CARD_H,
+                              background: `linear-gradient(135deg, ${sc}f0 0%, ${sc}bb 100%)`,
+                              borderRadius: 6, cursor: 'pointer',
+                              display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                              padding: '5px 8px', overflow: 'hidden', color: '#fff',
+                              boxShadow: `0 2px 8px ${sc}44`,
+                              borderLeft: `4px solid ${sc}`,
+                              zIndex: 5, transition: 'box-shadow 0.15s',
+                            }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4, textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
+                              🏥 {plan.hospitalName || plan.projectName}
+                            </div>
+                            {wPct > 3 && plan.projectName && plan.projectName !== plan.hospitalName && (
+                              <div style={{ fontSize: 10, opacity: 0.92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.35, marginTop: 1 }}>
+                                📋 {plan.projectName}
+                              </div>
+                            )}
+                            <div style={{ fontSize: 9, opacity: 0.88, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, marginTop: 2 }}>
+                              📅 {formatDate(plan.startDate)} – {formatDate(plan.endDate)}
+                            </div>
+                            {team.length > 0 && (
+                              <div style={{ fontSize: 9, opacity: 0.88, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, marginTop: 1 }}>
+                                👥 {team.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
-                  {/* Bar area */}
+        {/* ═══════════════════════════════════════════════════════════════════
+            YEAR VIEW — PERSON MODE: บุคคลเป็นแถว, เดือนเป็นคอลัมน์ (Gantt)
+        ════════════════════════════════════════════════════════════════════ */}
+        {timeRange === 'year' && viewBy === 'person' && (
+          <div>
+            {/* Quarter + Month header */}
+            <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 20 }}>
+              <div style={{ width: LABEL_W, minWidth: LABEL_W, flexShrink: 0, padding: '8px 16px', fontSize: 12, fontWeight: 700, color: '#64748b', borderRight: '2px solid #e2e8f0', background: '#f1f5f9', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+                <div>👤 ทีมงาน</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 400 }}>ทั้งปี พ.ศ. {viewYear + 543}</div>
+              </div>
+              <div style={{ flex: 1, display: 'flex' }}>
+                {monthColsPct.map(({ m, widthPct, daysInM }) => {
+                  const isCur = m === today.getMonth() && viewYear === today.getFullYear()
+                  const q = Math.floor(m / 3)
+                  return (
+                    <div key={m} style={{
+                      flex: `${widthPct} 0 0`, minWidth: 0,
+                      borderRight: '1px solid #e2e8f0',
+                      background: isCur ? '#dbeafe' : QUARTER_COLORS[q],
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      padding: '4px 2px',
+                      borderTop: `3px solid ${isCur ? '#0891b2' : ['#6366f1','#0891b2','#f59e0b','#16a34a'][q]}`,
+                    }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: isCur ? '#1e3a5f' : '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', textAlign: 'center' }}>
+                        {THAI_MONTHS_SHORT[m]}
+                      </div>
+                      <div style={{ fontSize: 9, color: '#94a3b8' }}>{daysInM} วัน</div>
+                      <div style={{ fontSize: 9, color: ['#6366f1','#0891b2','#f59e0b','#16a34a'][q], fontWeight: 700, marginTop: 1 }}>Q{q + 1}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Section label */}
+            {rows.length > 0 && <SectionLabel viewBy={viewBy} count={rows.length} />}
+
+            {/* Person rows */}
+            {rows.length === 0 ? <EmptyState /> : rows.map(row => {
+              const rowUnit = 40
+              const laneMap = new Map()
+              const laneEnds = []
+              const sorted = [...row.plans].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+              sorted.forEach(plan => {
+                const s = plan.startDate || ''
+                const lane = laneEnds.findIndex(end => s > end)
+                const l = lane === -1 ? laneEnds.length : lane
+                laneEnds[l] = plan.endDate || plan.startDate || ''
+                laneMap.set(plan.id, l)
+              })
+              const numLanes = Math.max(1, ...[...laneMap.values()].map(l => l + 1))
+              const dynamicH = Math.max(YEAR_ROW_H_P, numLanes > 1 ? numLanes * rowUnit + 10 : YEAR_ROW_H_P)
+
+              return (
+                <div key={row.key} style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', minHeight: dynamicH, alignItems: 'stretch' }}>
+                  <RowLabel row={row} viewBy={viewBy} compact={true} />
                   <div style={{ position: 'relative', flex: 1, minHeight: dynamicH, overflow: 'hidden' }}>
-                    {/* Weekend bg */}
-                    {timeRange === 'month' && days.map(d => isWeekend(d) && (
-                      <div key={d} style={{ position: 'absolute', left: (d - 1) * DAY_W, top: 0, width: DAY_W, height: '100%', background: 'rgba(254,243,199,0.4)', pointerEvents: 'none' }} />
-                    ))}
-                    {/* Month alternating bg */}
-                    {timeRange === 'year' && monthCols.map(({ m, off, w }) => (
-                      <div key={m} style={{ position: 'absolute', left: off, top: 0, width: w, height: '100%', borderRight: '1px solid #f1f5f9', background: m % 2 === 0 ? 'rgba(248,250,252,0.6)' : 'transparent', pointerEvents: 'none' }} />
-                    ))}
-                    {/* Today line month */}
-                    {timeRange === 'month' && viewMonth === today.getMonth() && viewYear === today.getFullYear() && (
-                      <div style={{ position: 'absolute', left: (today.getDate() - 1) * DAY_W + DAY_W / 2, top: 0, bottom: 0, width: 2, background: '#dc2626', opacity: 0.35, pointerEvents: 'none' }} />
+                    {monthColsPct.map(({ m, leftPct, widthPct }) => {
+                      const q = Math.floor(m / 3)
+                      return (
+                        <div key={m} style={{ position: 'absolute', left: `${leftPct}%`, top: 0, width: `${widthPct}%`, height: '100%', background: m % 2 === 0 ? `${QUARTER_COLORS[q]}55` : 'transparent', borderRight: '1px solid #e8ecf0', pointerEvents: 'none' }} />
+                      )
+                    })}
+                    {todayLinePct !== null && (
+                      <div style={{ position: 'absolute', left: `${todayLinePct}%`, top: 0, bottom: 0, width: 2, background: '#dc2626', opacity: 0.5, pointerEvents: 'none', zIndex: 4 }} />
                     )}
-                    {/* Today line year */}
-                    {todayLineLeft !== null && (
-                      <div style={{ position: 'absolute', left: todayLineLeft, top: 0, bottom: 0, width: 2, background: '#dc2626', opacity: 0.45, pointerEvents: 'none' }} />
-                    )}
-
-                    {/* Bars */}
                     {row.plans.map((plan, pi) => {
-                      const sc = STATUS_COLORS[plan.status] || '#059669'
-                      const lane = laneMap.get(plan.id) ?? pi
-                      const slotH = numLanes > 1 ? rowUnit - 2 : dynamicH - 12
-                      const barTop = (compactMode ? 3 : 6) + lane * (numLanes > 1 ? rowUnit : 0)
-                      const barH = Math.max(12, slotH - (compactMode ? 3 : 4))
-
-                      const bar = getBar(plan.startDate, plan.endDate)
-                      const r1 = plan.revisit1 ? getBar(plan.revisit1, plan.revisit1) : null
-                      const r2 = plan.revisit2 ? getBar(plan.revisit2, plan.revisit2) : null
-
-                      const getTeamNicknames = (p) => {
-                        const nicks = (p.team || []).map(t => {
-                          const m = teamMembers.find(tm => String(tm.id) === String(t.memberId))
-                               || teamMembers.find(tm => tm.name === t.name)
-                          return m?.nickname || t.name || ''
-                        }).filter(Boolean)
-                        return nicks.length > 0 ? nicks.join(', ') : p.projectName
-                      }
-
-                      const barLabel = viewBy === 'person'
-                        ? `${plan.projectName}${plan.hospitalName ? ` (${plan.hospitalName})` : ''}`
-                        : (viewMode === 'project' || viewMode === 'เข้า Revisit' || viewMode === 'เข้า Office')
-                          ? getTeamNicknames(plan)
-                          : `${plan.projectName}${plan.siteOwner ? ` · ${plan.siteOwner}` : ''}`
-
+                      const sc    = STATUS_COLORS[plan.status] || '#059669'
+                      const bar   = getBarYear(plan.startDate, plan.endDate)
+                      const r1    = plan.revisit1 ? getBarYear(plan.revisit1, plan.revisit1) : null
+                      const r2    = plan.revisit2 ? getBarYear(plan.revisit2, plan.revisit2) : null
+                      const lbl   = getBarLabel(plan, viewBy, viewMode, teamMembers)
+                      const lane  = laneMap.get(plan.id) ?? pi
+                      const slotH = numLanes > 1 ? rowUnit - 4 : dynamicH - 10
+                      const barTop = 5 + lane * (numLanes > 1 ? rowUnit : 0)
+                      const barH  = Math.max(16, slotH - 4)
                       return (
                         <span key={plan.id}>
                           {bar && (
-                            <div onClick={() => openEdit(plan)}
-                              title={`${plan.projectName}\nรพ.: ${plan.hospitalName}\nเจ้าของไซต์: ${plan.siteOwner || '-'}\n${formatDate(plan.startDate)} → ${formatDate(plan.endDate)}\nสถานะ: ${STATUS_LABELS[plan.status] || ''}\nคลิกเพื่อแก้ไข`}
+                            <div
+                              onClick={() => openEdit(plan)}
+                              onMouseEnter={ev => { ev.currentTarget.style.opacity='0.85'; showTooltip(plan, ev) }}
+                              onMouseMove={moveTooltip}
+                              onMouseLeave={ev => { ev.currentTarget.style.opacity='1'; hideTooltip() }}
                               style={{
-                                position: 'absolute', left: bar.left + 2, width: bar.width,
+                                position: 'absolute',
+                                left: `calc(${bar.leftPct}% + 2px)`, width: `calc(${bar.widthPct}% - 4px)`, minWidth: 8,
                                 top: barTop, height: barH,
-                                background: `linear-gradient(135deg, ${sc}ee, ${sc}99)`,
-                                borderRadius: 5, cursor: 'pointer',
-                                display: 'flex', alignItems: 'center', padding: '0 7px',
-                                overflow: 'hidden', color: '#fff', fontSize: 11, fontWeight: 600,
-                                whiteSpace: 'nowrap', boxShadow: `0 2px 6px ${sc}55`,
-                                borderLeft: `3px solid ${sc}`, zIndex: 5, transition: 'opacity 0.15s',
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
-                              onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
-                              {bar.width > 50 && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{barLabel}</span>}
+                                background: `linear-gradient(135deg, ${sc}ee, ${sc}aa)`,
+                                borderRadius: 4, cursor: 'pointer',
+                                display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '2px 6px',
+                                overflow: 'hidden', color: '#fff', fontSize: 10, fontWeight: 600,
+                                boxShadow: `0 1px 4px ${sc}44`, borderLeft: `3px solid ${sc}`, zIndex: 5, transition: 'opacity 0.15s',
+                              }}>
+                              {bar.widthPct > 1.5 && (
+                                <>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>{lbl}</span>
+                                  {barH > 28 && <span style={{ fontSize: 8, opacity: 0.8, whiteSpace: 'nowrap' }}>{formatDate(plan.startDate)}</span>}
+                                </>
+                              )}
                             </div>
                           )}
                           {r1 && (
-                            <div onClick={() => openEdit(plan)} title={`Revisit 1: ${formatDate(plan.revisit1)} — คลิกเพื่อแก้ไข`}
-                              style={{ position: 'absolute', left: r1.left + 2, width: Math.max(timeRange === 'year' ? DAY_W_Y * 3 : DAY_W - 6, r1.width), top: barTop, height: barH, background: '#f59e0b', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9, fontWeight: 800, zIndex: 6, boxShadow: '0 1px 4px rgba(245,158,11,0.5)' }}>
-                              R1
-                            </div>
+                            <div onClick={() => openEdit(plan)} onMouseEnter={ev => showTooltip(plan, ev)} onMouseMove={moveTooltip} onMouseLeave={hideTooltip}
+                              style={{ position: 'absolute', left: `${r1.leftPct}%`, width: `max(${r1.widthPct}%, 14px)`, minWidth: 14, top: barTop, height: barH, background: '#f59e0b', borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 8, fontWeight: 800, zIndex: 6 }}>R1</div>
                           )}
                           {r2 && (
-                            <div onClick={() => openEdit(plan)} title={`Revisit 2: ${formatDate(plan.revisit2)} — คลิกเพื่อแก้ไข`}
-                              style={{ position: 'absolute', left: r2.left + 2, width: Math.max(timeRange === 'year' ? DAY_W_Y * 3 : DAY_W - 6, r2.width), top: barTop, height: barH, background: '#7c3aed', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9, fontWeight: 800, zIndex: 6, boxShadow: '0 1px 4px rgba(124,58,237,0.5)' }}>
-                              R2
-                            </div>
+                            <div onClick={() => openEdit(plan)} onMouseEnter={ev => showTooltip(plan, ev)} onMouseMove={moveTooltip} onMouseLeave={hideTooltip}
+                              style={{ position: 'absolute', left: `${r2.leftPct}%`, width: `max(${r2.widthPct}%, 14px)`, minWidth: 14, top: barTop, height: barH, background: '#7c3aed', borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 8, fontWeight: 800, zIndex: 6 }}>R2</div>
                           )}
                         </span>
                       )
@@ -572,52 +723,117 @@ export default function Calendar() {
                 </div>
               )
             })}
+          </div>
+        )}
 
-            {/* Legend */}
-            <div style={{ display: 'flex', gap: 14, padding: '10px 16px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>สถานะ:</span>
-              {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <div style={{ width: 12, height: 12, borderRadius: 3, background: STATUS_COLORS[k] }} />
-                  <span style={{ fontSize: 11, color: '#64748b' }}>{v}</span>
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 14, padding: '10px 16px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>สถานะ:</span>
+          {Object.entries(STATUS_LABELS).map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: STATUS_COLORS[k] }} />
+              <span style={{ fontSize: 11, color: '#64748b' }}>{v}</span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: '#f59e0b' }} />
+            <span style={{ fontSize: 11, color: '#64748b' }}>R1 Revisit 1</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: '#7c3aed' }} />
+            <span style={{ fontSize: 11, color: '#64748b' }}>R2 Revisit 2</span>
+          </div>
+          {timeRange === 'year' && (
+            <>
+              {[['#6366f1','Q1 ม.ค.–มี.ค.'],['#0891b2','Q2 เม.ย.–มิ.ย.'],['#f59e0b','Q3 ก.ค.–ก.ย.'],['#16a34a','Q4 ต.ค.–ธ.ค.']].map(([c,l]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: c }} />
+                  <span style={{ fontSize: 11, color: '#64748b' }}>{l}</span>
                 </div>
               ))}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 12, height: 12, borderRadius: 3, background: '#f59e0b' }} />
-                <span style={{ fontSize: 11, color: '#64748b' }}>R1 Revisit 1</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 12, height: 12, borderRadius: 3, background: '#7c3aed' }} />
-                <span style={{ fontSize: 11, color: '#64748b' }}>R2 Revisit 2</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-                <div style={{ width: 2, height: 14, background: '#dc2626', borderRadius: 1 }} />
-                <span style={{ fontSize: 11, color: '#64748b' }}>วันนี้</span>
-              </div>
-            </div>
-
+            </>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+            <div style={{ width: 2, height: 14, background: '#dc2626', borderRadius: 1 }} />
+            <span style={{ fontSize: 11, color: '#64748b' }}>วันนี้</span>
           </div>
         </div>
+
       </div>
 
-      {/* ═══ EDIT MODAL (inline, no navigation) ═══ */}
+      {/* ═══ TEAM TOOLTIP CARD ═══ */}
+      {tooltip && (() => {
+        const p = tooltip.plan
+        const sc = STATUS_COLORS[p.status] || '#059669'
+        const sl = STATUS_LABELS[p.status] || p.status || ''
+        const members = (p.team || [])
+        // ตรวจสอบให้ tooltip อยู่ในหน้าจอ
+        const tx = tooltip.x + 16
+        const ty = tooltip.y - 10
+        return (
+          <div style={{
+            position: 'fixed', left: tx, top: ty,
+            background: '#1e293b', color: '#fff',
+            borderRadius: 10, padding: '12px 16px',
+            fontSize: 12, zIndex: 9999,
+            maxWidth: 300, minWidth: 200,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            pointerEvents: 'none',
+            border: `2px solid ${sc}`,
+          }}>
+            {/* สถานะ */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: sc, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: sc, fontWeight: 700 }}>{sl}</span>
+            </div>
+            {/* ชื่อ รพ. / โครงการ */}
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2, color: '#f1f5f9' }}>{p.hospitalName || p.projectName}</div>
+            {p.projectName && p.projectName !== p.hospitalName && (
+              <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>📋 {p.projectName}</div>
+            )}
+            {/* วันที่ */}
+            <div style={{ color: '#7dd3fc', fontSize: 11, marginBottom: 6 }}>
+              📅 {formatDate(p.startDate)} → {formatDate(p.endDate)}
+            </div>
+            {/* เจ้าของไซต์ */}
+            {p.siteOwner && (
+              <div style={{ color: '#86efac', fontSize: 11, marginBottom: 6 }}>👤 {p.siteOwner}</div>
+            )}
+            {/* ทีมงาน */}
+            {members.length > 0 && (
+              <div>
+                <div style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700, marginBottom: 4, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 6 }}>
+                  👥 ทีมงาน ({members.length} คน)
+                </div>
+                {members.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <span style={{ width: 18, height: 18, background: '#0891b2', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{i+1}</span>
+                    <span style={{ flex: 1, fontSize: 12, color: '#f1f5f9' }}>{m.name}</span>
+                    {m.role && <span style={{ fontSize: 10, color: '#94a3b8' }}>{m.role}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 6 }}>
+              คลิกเพื่อแก้ไขแผนงาน
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ═══ EDIT MODAL ═══ */}
       {editForm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 300, padding: '24px 16px', overflowY: 'auto' }}>
           <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 680, boxShadow: '0 24px 80px rgba(0,0,0,0.3)', marginBottom: 24 }}>
-
-            {/* Modal header */}
             <div style={{ background: 'linear-gradient(135deg, #1a2d4a, #1e3a5f)', padding: '20px 28px', borderRadius: '16px 16px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ color: '#fff', fontWeight: 700, fontSize: 18 }}>✏️ แก้ไขแผนงาน</div>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>{editForm.projectName}</div>
               </div>
-              <button onClick={() => setEditForm(null)}
-                style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              <button onClick={() => setEditForm(null)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
-
             <form onSubmit={handleSaveEdit}>
               <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-
                 <FormSection num={1} title="ข้อมูลโครงการ">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <div style={{ gridColumn: 'span 2' }}>
@@ -651,7 +867,6 @@ export default function Calendar() {
                     </div>
                   </div>
                 </FormSection>
-
                 <FormSection num={2} title="ระยะเวลาโครงการ">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <div style={{ gridColumn: 'span 2' }}>
@@ -685,36 +900,25 @@ export default function Calendar() {
                     </div>
                   </div>
                 </FormSection>
-
                 <FormSection num={3} title="สถานะดำเนินการโครงการ">
                   {(() => {
                     const s = PROJECT_STATUS.find(p => p.value === editForm.status) || PROJECT_STATUS[0]
                     return (
-                      <select value={editForm.status} onChange={setEF('status')} style={{
-                        width: '100%', padding: '10px 14px',
-                        border: `2px solid ${s.color}`,
-                        borderRadius: 8, fontSize: 14, fontWeight: 700,
-                        color: s.color, background: s.bg, cursor: 'pointer',
-                      }}>
-                        {PROJECT_STATUS.map(p => (
-                          <option key={p.value} value={p.value}>{p.label}</option>
-                        ))}
+                      <select value={editForm.status} onChange={setEF('status')} style={{ width: '100%', padding: '10px 14px', border: `2px solid ${s.color}`, borderRadius: 8, fontSize: 14, fontWeight: 700, color: s.color, background: s.bg, cursor: 'pointer' }}>
+                        {PROJECT_STATUS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                       </select>
                     )
                   })()}
                 </FormSection>
-
                 <FormSection num={4} title="ทีมงานร่วมโครงการ">
                   <TeamInput team={editForm.team || []} onChange={(team) => setEditForm(p => ({ ...p, team }))} />
                 </FormSection>
-
                 <div>
                   <label style={LS}>หมายเหตุ</label>
                   <textarea value={editForm.note || ''} onChange={setEF('note')} rows={2} placeholder="รายละเอียดเพิ่มเติม..."
                     style={{ ...IS, resize: 'vertical' }} />
                 </div>
               </div>
-
               <div style={{ padding: '16px 28px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: 10 }}>
                 <button type="submit" style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #1e3a5f, #0891b2)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
                   💾 บันทึกการแก้ไข
@@ -730,4 +934,80 @@ export default function Calendar() {
       )}
     </div>
   )
+}
+
+// ─── Small shared components ─────────────────────────────────────────────────
+
+function SectionLabel({ viewBy, count }) {
+  return (
+    <div style={{ padding: '5px 16px', display: 'flex', alignItems: 'center', gap: 6, background: viewBy === 'person' ? '#eff6ff' : '#f0fdf4', borderBottom: `1px solid ${viewBy === 'person' ? '#bfdbfe' : '#bbf7d0'}` }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: viewBy === 'person' ? '#1d4ed8' : '#15803d' }}>
+        {viewBy === 'person' ? `👥 แสดงตามรายคน (${count} คน)` : `🏥 แสดงตามโครงการ (${count} โครงการ)`}
+      </span>
+      <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>คลิกที่ Bar เพื่อแก้ไขแผนงาน</span>
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div style={{ padding: '56px 0', textAlign: 'center', color: '#94a3b8' }}>
+      <div style={{ fontSize: 44, marginBottom: 12 }}>📅</div>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>ไม่มีแผนงานในช่วงเวลานี้</div>
+      <div style={{ fontSize: 13 }}>ลองเปลี่ยนช่วงเวลา หรือเพิ่มแผนงานในเมนูแผนการปฏิบัติงาน</div>
+    </div>
+  )
+}
+
+function RowLabel({ row, viewBy, compact }) {
+  return (
+    <div style={{ position: 'sticky', left: 0, zIndex: 10, width: LABEL_W, minWidth: LABEL_W, padding: compact ? '4px 16px' : '8px 16px', borderRight: '2px solid #e2e8f0', background: viewBy === 'person' ? '#fdfeff' : '#fafffe', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+      <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</div>
+      {row.sub1 && <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub1}</div>}
+      {row.sub2 && <div style={{ fontSize: 11, color: '#0891b2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub2}</div>}
+    </div>
+  )
+}
+
+function BarDiv({ bar, barTop, barH, sc, label, plan, onClick }) {
+  return (
+    <div onClick={onClick}
+      title={`${plan.projectName}\nรพ.: ${plan.hospitalName}\n${formatDate(plan.startDate)} → ${formatDate(plan.endDate)}`}
+      style={{
+        position: 'absolute', left: bar.left, width: bar.width,
+        top: barTop, height: barH,
+        background: `linear-gradient(135deg, ${sc}ee, ${sc}99)`,
+        borderRadius: 5, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', padding: '0 7px',
+        overflow: 'hidden', color: '#fff', fontSize: 11, fontWeight: 600,
+        whiteSpace: 'nowrap', boxShadow: `0 2px 6px ${sc}55`,
+        borderLeft: `3px solid ${sc}`, zIndex: 5, transition: 'opacity 0.15s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+      onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+      {bar.width > 50 && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>}
+    </div>
+  )
+}
+
+function RevisitDot({ style, barTop, barH, label, color, plan, onClick }) {
+  return (
+    <div onClick={onClick}
+      title={`${label === 'R1' ? 'Revisit 1' : 'Revisit 2'}: ${plan[label === 'R1' ? 'revisit1' : 'revisit2']}`}
+      style={{ position: 'absolute', ...style, width: 24, top: barTop, height: barH, background: color, borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9, fontWeight: 800, zIndex: 6, boxShadow: `0 1px 4px ${color}88` }}>
+      {label}
+    </div>
+  )
+}
+
+function getBarLabel(plan, viewBy, viewMode, teamMembers) {
+  if (viewBy === 'person') {
+    return `${plan.projectName}${plan.hospitalName ? ` (${plan.hospitalName})` : ''}`
+  }
+  const nicks = (plan.team || []).map(t => {
+    const m = teamMembers.find(tm => String(tm.id) === String(t.memberId))
+           || teamMembers.find(tm => tm.name === t.name)
+    return m?.nickname || t.name || ''
+  }).filter(Boolean)
+  return nicks.length > 0 ? nicks.join(', ') : plan.projectName
 }

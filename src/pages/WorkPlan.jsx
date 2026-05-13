@@ -12,6 +12,7 @@ const PROJECT_STATUS = [
   { value: 'advance',  label: 'จัดทำ Adv',         color: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
   { value: 'inprog',   label: 'กำลังดำเนินการ',   color: '#0891b2', bg: '#ecfeff', border: '#67e8f9' },
   { value: 'deliver',  label: 'ส่งมอบงาน',        color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
+  { value: 'revisit',  label: 'Revisit',           color: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
   { value: 'accounting', label: 'ส่งต่อบัญชี',   color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
   { value: 'closed',   label: 'ปิดโครงการ',       color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
 ]
@@ -245,6 +246,27 @@ export default function WorkPlan() {
     a.click(); URL.revokeObjectURL(url)
   }
 
+  const exportProgressCSV = () => {
+    const ADV_LABEL = { pending:'ยังไม่ดำเนินการ', waiting_approve:'รออนุมัติ', approved:'อนุมัติแล้ว', received:'ได้ Adv แล้ว', waiting_clear:'รอเคลียร์ Adv', cleared:'เคลียร์แล้ว' }
+    const pct = (p) => p?.total > 0 ? `${p.pct}% (${p.checked}/${p.total})` : '-'
+    const headers = ['ลำดับ', 'โครงการ', 'โรงพยาบาล', 'สถานะโครงการ', 'Advance', 'แผนปฏิบัติงาน', 'ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน']
+    const rows = displayed.map((plan, idx) => {
+      const b   = getProgress('basic',      plan.hospitalId)
+      const fp  = getProgress('form',       plan.hospitalId)
+      const r   = getProgress('report',     plan.hospitalId)
+      const mp  = getProgress('masterplan', plan.hospitalId)
+      const adv = getAdvanceStatusByPlan(plan.id)
+      const status = PROJECT_STATUS.find(s => s.value === plan.status)?.label || plan.status || ''
+      return [idx + 1, plan.projectName || '', getHospName(plan.hospitalId), status, ADV_LABEL[adv] || (adv || '-'), pct(mp), pct(b), pct(fp), pct(r)]
+    })
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `ความคืบหน้าโครงการ_${new Date().toISOString().slice(0,10)}.csv`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   // ดึงปี พ.ศ. จากช่วง วันที่เริ่มโครงการ → สิ้นสุดโครงการ (ไม่ใช้ onlineStart/onlineEnd)
   // รองรับข้อมูลเก่าที่มีทั้ง ค.ศ. (เช่น 2026) และ พ.ศ. (เช่น 2569) ปนกันใน DB
   const beYear = (d) => {
@@ -284,8 +306,8 @@ export default function WorkPlan() {
       return true
     })
     .sort((a, b) => {
-      const sa = a.onlineStart || '9999-99-99'
-      const sb = b.onlineStart || '9999-99-99'
+      const sa = a.startDate || '9999-99-99'
+      const sb = b.startDate || '9999-99-99'
       return sa.localeCompare(sb)
     })
 
@@ -318,7 +340,7 @@ export default function WorkPlan() {
         <button onClick={openAdd} style={{ padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           + เพิ่มแผนงาน
         </button>
-        <button onClick={exportCSV} style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+        <button onClick={activeTab === 'progress' ? exportProgressCSV : exportCSV} style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           ⬇ Export Excel
         </button>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อโครงการ / รพ."

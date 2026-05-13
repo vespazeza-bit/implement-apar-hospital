@@ -97,7 +97,11 @@ export default function TrainingSummary() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.hospitalId || !form.description || !form.date) return alert('กรุณากรอกข้อมูลให้ครบถ้วน')
+    if (!form.hospitalId) return alert('กรุณาเลือกโรงพยาบาล / โครงการ')
+    if (!form.date) return alert('กรุณากรอกวันที่พบปัญหา')
+    if (!form.systemName) return alert('กรุณาเลือกระบบงาน')
+    if (!form.category) return alert('กรุณาเลือกประเภทปัญหา')
+    if (!form.description) return alert('กรุณากรอกรายละเอียดปัญหา')
     // จำค่า รพ./โครงการ ที่เลือกล่าสุด
     if (form.hospKey) localStorage.setItem(LAST_HOSP_KEY, form.hospKey)
     const { hospKey, ...payload } = form
@@ -408,8 +412,8 @@ export default function TrainingSummary() {
                     if (me && !opts.some(o => o.value === me)) opts.unshift({ value: me, label: `${me} (ฉัน)` })
                     return opts
                   })(), nullable: true },
-                  { label: 'ระบบงาน', type: 'select', key: 'systemName', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
-                  { label: 'ประเภทปัญหา', type: 'select', key: 'category', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
+                  { label: 'ระบบงาน *', type: 'select', key: 'systemName', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
+                  { label: 'ประเภทปัญหา *', type: 'select', key: 'category', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
                   { label: 'ความรุนแรง', type: 'select', key: 'severity', options: SEVERITY.map(s => ({ value: s.value, label: s.label })) },
                   { label: 'สถานะ', type: 'select', key: 'status', options: STATUS_OPT.map(s => ({ value: s.value, label: s.label })), span2: true },
                 ].map(f => (

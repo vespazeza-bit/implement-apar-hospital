@@ -87,7 +87,11 @@ export default function SystemSummary() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.hospitalId || !form.description || !form.reportDate) return alert('กรุณากรอกข้อมูลให้ครบถ้วน')
+    if (!form.hospitalId) return alert('กรุณาเลือกโรงพยาบาล / โครงการ')
+    if (!form.reportDate) return alert('กรุณากรอกวันที่พบปัญหา')
+    if (!form.systemName) return alert('กรุณาเลือกระบบงาน')
+    if (!form.category) return alert('กรุณาเลือกประเภทปัญหา')
+    if (!form.description) return alert('กรุณากรอกรายละเอียดปัญหา')
     if (form.hospKey) localStorage.setItem(LAST_HOSP_KEY, form.hospKey)
     const { hospKey, ...payload } = form
     if (editId) {
@@ -272,8 +276,8 @@ export default function SystemSummary() {
                     if (me && !opts.some(o => o.value === me)) opts.unshift({ value: me, label: `${me} (ฉัน)` })
                     return opts
                   })(), nullable: true },
-                  { label: 'ระบบงาน', key: 'systemName', type: 'select', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
-                  { label: 'ประเภทปัญหา', key: 'category', type: 'select', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
+                  { label: 'ระบบงาน *', key: 'systemName', type: 'select', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
+                  { label: 'ประเภทปัญหา *', key: 'category', type: 'select', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
                   { label: 'ความสำคัญ', key: 'priority', type: 'select', options: PRIORITY.map(p => ({ value: p.value, label: p.label })) },
                   { label: 'สถานะ', key: 'status', type: 'select', options: STATUS_OPT.map(s => ({ value: s.value, label: s.label })) },
                 ].map(f => (

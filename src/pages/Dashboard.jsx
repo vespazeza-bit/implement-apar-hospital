@@ -8,6 +8,7 @@ const PROJECT_STATUS = {
   advance:    { label: 'จัดทำ Adv',        color: '#ea580c', bg: '#fff7ed' },
   inprog:     { label: 'กำลังดำเนินการ',  color: '#0891b2', bg: '#ecfeff' },
   deliver:    { label: 'ส่งมอบงาน',       color: '#1d4ed8', bg: '#eff6ff' },
+  revisit:    { label: 'Revisit',          color: '#db2777', bg: '#fdf2f8' },
   accounting: { label: 'ส่งต่อบัญชี',     color: '#7c3aed', bg: '#f5f3ff' },
   closed:     { label: 'ปิดโครงการ',      color: '#16a34a', bg: '#f0fdf4' },
 }
@@ -170,6 +171,11 @@ export default function Dashboard() {
       .sort((a, b) => b._date.localeCompare(a._date))
       .slice(0, 10)
 
+    // ── สรุปสถานะโครงการ ──────────────────────────────────────────────────
+    const statusCounts = {}
+    Object.keys(PROJECT_STATUS).forEach(k => { statusCounts[k] = 0 })
+    projectPlans.forEach(p => { if (statusCounts[p.status] != null) statusCounts[p.status] += 1 })
+
     return {
       totalHosp, hospActive, hospOnline: hospOnline.size,
       onTime, delayed, ongoing, finished,
@@ -177,6 +183,7 @@ export default function Dashboard() {
       totalAdvance, totalActual, advCount,
       upcomingOnline, criticalIssues,
       topProgress, bottomProgress, recentActivity,
+      statusCounts, totalPlans: projectPlans.length,
     }
   }, [hospitals, projectPlans, trainingIssues, systemIssues, advanceRecords,
       basicEntriesSummary, formEntriesSummary, reportEntriesSummary])
@@ -222,6 +229,35 @@ export default function Dashboard() {
           sub={`${stats.advCount} ครั้ง • ใช้จริง ${stats.totalActual.toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`}
           accent="#16a34a" icon="💰" link="/advance"
         />
+      </div>
+
+      {/* Section 1.5: สรุปสถานะโครงการ ────────────────────────────────── */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '16px 20px', marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>📋</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#1e3a5f' }}>สรุปสถานะโครงการทั้งหมด</span>
+            <span style={{ fontSize: 12, color: '#64748b', background: '#f1f5f9', borderRadius: 20, padding: '2px 10px' }}>
+              รวม {stats.totalPlans} โครงการ
+            </span>
+          </div>
+          <a href="/workplan" style={{ fontSize: 12, color: '#0891b2', textDecoration: 'none', fontWeight: 600 }}>ดูแผนทั้งหมด →</a>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {Object.entries(PROJECT_STATUS).map(([key, s]) => {
+            const count = stats.statusCounts?.[key] || 0
+            const pct = stats.totalPlans > 0 ? Math.round(count / stats.totalPlans * 100) : 0
+            return (
+              <div key={key} style={{ flex: '1 1 120px', minWidth: 110, background: s.bg, borderRadius: 10, padding: '12px 14px', border: `1px solid ${s.color}33`, position: 'relative', overflow: 'hidden' }}>
+                {/* progress bar background */}
+                <div style={{ position: 'absolute', bottom: 0, left: 0, height: 3, width: `${pct}%`, background: s.color, borderRadius: '0 0 10px 10px', transition: 'width 0.6s' }} />
+                <div style={{ fontSize: 22, fontWeight: 800, color: s.color, lineHeight: 1 }}>{count}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: s.color, marginTop: 3 }}>{s.label}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{pct}% ของทั้งหมด</div>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Section 2: Action items ───────────────────────────────────────── */}

@@ -1,44 +1,52 @@
 import { useState, useEffect, useRef } from 'react'
 
 /**
- * DateInput — แสดงผลเป็น dd/mm/yyyy, รับ/ส่งค่าเป็น yyyy-mm-dd
+ * DateInput — แสดงผลเป็น dd/mm/พ.ศ., รับ/ส่งค่าเป็น yyyy-mm-dd (ค.ศ.)
+ * ผู้ใช้พิมพ์ปีเป็น พ.ศ. (เช่น 2569) หรือ ค.ศ. (เช่น 2026) ก็รองรับทั้งคู่
  */
-export default function DateInput({ value = '', onChange, style, placeholder = 'dd/mm/yyyy', disabled, required }) {
+export default function DateInput({ value = '', onChange, style, placeholder = 'dd/mm/ปปปป', disabled, required }) {
   const pickerRef = useRef(null)
   const [text, setText] = useState('')
   const [focused, setFocused] = useState(false)
 
+  // ค.ศ. ISO → dd/mm/พ.ศ.
   const toDisplay = (iso) => {
     if (!iso || !String(iso).includes('-')) return ''
     const s = String(iso).slice(0, 10)
     const [y, m, d] = s.split('-')
     if (!y || !m || !d) return ''
-    return `${d}/${m}/${y}`
+    const numY = parseInt(y, 10)
+    // ปี ค.ศ. < 2400 → บวก 543 ให้เป็น พ.ศ.
+    const beYear = numY < 2400 ? numY + 543 : numY
+    return `${d}/${m}/${beYear}`
   }
 
+  // dd/mm/ปปปป (พ.ศ. หรือ ค.ศ.) → yyyy-mm-dd (ค.ศ.)
   const toISO = (display) => {
     if (!display) return ''
     const parts = display.replace(/[^\d/]/g, '').split('/')
     if (parts.length !== 3) return ''
     const [d, m, y] = parts
     if (!d || !m || !y || y.length !== 4) return ''
-    const iso = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
-    // validate
+    const numY = parseInt(y, 10)
+    // ถ้าปี >= 2400 ถือว่าเป็น พ.ศ. → แปลงเป็น ค.ศ.
+    const ceYear = numY >= 2400 ? numY - 543 : numY
+    const iso = `${ceYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
     const dt = new Date(iso)
     if (isNaN(dt.getTime())) return ''
     return iso
   }
 
-  // sync display when value changes from outside (not while typing)
+  // sync display เมื่อ value เปลี่ยนจากภายนอก (ไม่ใช่ขณะพิมพ์)
   useEffect(() => {
     if (!focused) setText(toDisplay(value))
   }, [value, focused])
 
   const handleTextChange = (e) => {
     let raw = e.target.value
-    // auto-insert / on position 2 and 5
     if (!focused) return
     const prev = text
+    // auto-insert / ที่ตำแหน่ง 2 และ 5
     if (raw.length === 2 && prev.length === 1 && !raw.includes('/')) raw = raw + '/'
     if (raw.length === 5 && prev.length === 4 && raw.split('/').length === 2) raw = raw + '/'
     setText(raw)
@@ -49,11 +57,10 @@ export default function DateInput({ value = '', onChange, style, placeholder = '
 
   const handleBlur = () => {
     setFocused(false)
-    // reformat on blur
     const iso = toISO(text)
     if (iso) { onChange?.(iso); setText(toDisplay(iso)) }
     else if (!text) { onChange?.(''); setText('') }
-    else setText(toDisplay(value)) // revert if invalid
+    else setText(toDisplay(value)) // revert ถ้า invalid
   }
 
   const openPicker = () => {
@@ -92,12 +99,15 @@ export default function DateInput({ value = '', onChange, style, placeholder = '
           fontSize: 14, color: '#94a3b8',
         }}
       >📅</button>
-      {/* hidden native date picker for calendar UI */}
+      {/* hidden native date picker — ใช้ ค.ศ. เพื่อให้ browser เข้าใจ */}
       <input
         ref={pickerRef}
         type="date"
         value={value || ''}
-        onChange={e => { onChange?.(e.target.value); setText(toDisplay(e.target.value)) }}
+        onChange={e => {
+          onChange?.(e.target.value)
+          setText(toDisplay(e.target.value))
+        }}
         tabIndex={-1}
         style={{ position: 'absolute', opacity: 0, width: 1, height: 1, pointerEvents: 'none', top: 0, left: 0 }}
       />
