@@ -154,10 +154,13 @@ export default function Advance() {
   }
 
   const getDiff = (amount, actual) => {
-    const a = Number(amount) || 0
-    const b = Number(actual) || 0
-    return a - b
+    const a = parseFloat(amount) || 0
+    const b = parseFloat(actual) || 0
+    return Math.round((a - b) * 100) / 100
   }
+
+  const fmtMoney = (v) =>
+    Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   // ปุ่มอนุมัติ — เปลี่ยนสถานะเป็น 'approved'
   const handleApprove = async (rec) => {
@@ -328,16 +331,16 @@ export default function Advance() {
                         </span>
                       </td>
                       <td style={{ padding: '12px', fontSize: 13, color: '#1e3a5f', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        {rec.amount ? Number(rec.amount).toLocaleString('th-TH') : '-'}
+                        {rec.amount ? fmtMoney(rec.amount) : '-'}
                       </td>
                       <td style={{ padding: '12px', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{formatDate(rec.advDate)}</td>
                       <td style={{ padding: '12px', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{formatDate(rec.clearDate)}</td>
                       <td style={{ padding: '12px', fontSize: 13, color: '#374151', whiteSpace: 'nowrap' }}>
-                        {rec.actualAmount ? Number(rec.actualAmount).toLocaleString('th-TH') : '-'}
+                        {rec.actualAmount ? fmtMoney(rec.actualAmount) : '-'}
                       </td>
                       <td style={{ padding: '12px', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
                         color: diff > 0 ? '#16a34a' : diff < 0 ? '#dc2626' : '#64748b' }}>
-                        {rec.amount || rec.actualAmount ? (diff >= 0 ? '+' : '') + diff.toLocaleString('th-TH') : '-'}
+                        {rec.amount || rec.actualAmount ? (diff >= 0 ? '+' : '') + fmtMoney(diff) : '-'}
                       </td>
                       <td style={{ padding: '12px', whiteSpace: 'nowrap' }}><StatusBadge value={rec.status} /></td>
                       <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
@@ -361,9 +364,9 @@ export default function Advance() {
 
           {/* Footer summary */}
           <div style={{ display: 'flex', gap: 32, padding: '12px 20px', background: '#1e3a5f', borderTop: '2px solid #0891b2', justifyContent: 'flex-end' }}>
-            <div style={{ fontSize: 13, color: '#94a3b8' }}>รวมขอเบิก: <strong style={{ color: '#38bdf8' }}>{totalAmount.toLocaleString('th-TH')} ฿</strong></div>
-            <div style={{ fontSize: 13, color: '#94a3b8' }}>รวมจ่ายจริง: <strong style={{ color: '#34d399' }}>{totalActual.toLocaleString('th-TH')} ฿</strong></div>
-            <div style={{ fontSize: 13, color: '#94a3b8' }}>ส่วนต่างรวม: <strong style={{ color: (totalAmount - totalActual) >= 0 ? '#fbbf24' : '#f87171' }}>{(totalAmount - totalActual).toLocaleString('th-TH')} ฿</strong></div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>รวมขอเบิก: <strong style={{ color: '#38bdf8' }}>{fmtMoney(totalAmount)} ฿</strong></div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>รวมจ่ายจริง: <strong style={{ color: '#34d399' }}>{fmtMoney(totalActual)} ฿</strong></div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>ส่วนต่างรวม: <strong style={{ color: (totalAmount - totalActual) >= 0 ? '#fbbf24' : '#f87171' }}>{fmtMoney(totalAmount - totalActual)} ฿</strong></div>
           </div>
         </div>
       )}
@@ -435,11 +438,11 @@ export default function Advance() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div>
                     <label style={LS}>4. จำนวนเงินที่ขอเบิก (฿)</label>
-                    <input type="number" value={form.amount} onChange={set('amount')} placeholder="0.00" style={IS} min={0} />
+                    <input type="number" value={form.amount} onChange={set('amount')} placeholder="0.00" style={IS} min={0} step="0.01" />
                   </div>
                   <div>
                     <label style={LS}>7. จำนวนเงินที่จ่ายจริง (฿)</label>
-                    <input type="number" value={form.actualAmount} onChange={set('actualAmount')} placeholder="0.00" style={IS} min={0} />
+                    <input type="number" value={form.actualAmount} onChange={set('actualAmount')} placeholder="0.00" style={IS} min={0} step="0.01" />
                   </div>
                   <div>
                     <label style={LS}>5. วันที่จัดทำ Adv</label>
@@ -456,7 +459,7 @@ export default function Advance() {
                       const hasDiff = form.amount || form.actualAmount
                       return (
                         <div style={{ padding: '10px 14px', borderRadius: 8, fontWeight: 700, fontSize: 16, border: '1.5px solid', background: !hasDiff ? '#f8fafc' : diff > 0 ? '#f0fdf4' : diff < 0 ? '#fef2f2' : '#f8fafc', borderColor: !hasDiff ? '#e2e8f0' : diff > 0 ? '#86efac' : diff < 0 ? '#fecaca' : '#e2e8f0', color: !hasDiff ? '#94a3b8' : diff > 0 ? '#16a34a' : diff < 0 ? '#dc2626' : '#64748b' }}>
-                          {!hasDiff ? '–' : (diff >= 0 ? '+' : '') + diff.toLocaleString('th-TH') + ' ฿'}
+                          {!hasDiff ? '–' : (diff >= 0 ? '+' : '') + fmtMoney(diff) + ' ฿'}
                           {hasDiff && <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
                             {diff > 0 ? '(คงเหลือ)' : diff < 0 ? '(จ่ายเกิน)' : '(เท่ากัน)'}
                           </span>}

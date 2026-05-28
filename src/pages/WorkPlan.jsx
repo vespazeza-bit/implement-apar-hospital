@@ -60,6 +60,12 @@ const formatDate = (d) => {
   return `${day}/${m}/${y}`
 }
 const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
+const addDays = (dateStr, n) => {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  const dt = new Date(y, m - 1, d + n)
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
+}
 
 const EMPTY_PLAN = {
   hospitalId: '', projectName: '', siteOwner: '', teamLeader: '', installType: '',
@@ -154,8 +160,10 @@ export default function WorkPlan() {
   // หาสถานะ Advance ล่าสุดของโครงการ
   const getAdvanceStatusByPlan = (planId) => {
     const recs = (advanceRecords || []).filter(r => String(r.planId) === String(planId))
-    if (!recs.length) return null
-    return recs.reduce((latest, r) => (r.id > latest.id ? r : latest)).status
+    if (!recs.length) return 'pending'
+    // เรียงตาม advDate desc (ตรงกับหน้า Advance) แล้วเอาสถานะของรายการล่าสุด
+    const sorted = [...recs].sort((a, b) => (b.advDate || '').localeCompare(a.advDate || '') || b.id - a.id)
+    return sorted[0].status
   }
 
   // เปิด modal แก้ไขอัตโนมัติเมื่อมาจากปฏิทิน
@@ -889,8 +897,10 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
   // Tab 0: กำหนดหัวข้อการปฏิบัติงาน
   const [topics, setTopics] = useState([])
   const [newTopic, setNewTopic] = useState('')
+  const [newTopicOrder, setNewTopicOrder] = useState('')
   const [editTopicId, setEditTopicId] = useState(null)
   const [editTopicTitle, setEditTopicTitle] = useState('')
+  const [editTopicOrder, setEditTopicOrder] = useState('')
   // Tab 1: บันทึก MasterPlan
   const [selPlanId, setSelPlanId] = useState(defaultPlanId)
   const [items, setItems] = useState([])
@@ -901,6 +911,7 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
   const [dragRow, setDragRow] = useState(null)
   const [dragOverRow, setDragOverRow] = useState(null)
   const [reordered, setReordered] = useState(false)
+  const [planHolidays, setPlanHolidays] = useState([])
 
   const loadTopics = useCallback(async () => {
     try { setTopics(await api.get('/masterplan-topics')) } catch { /**/ }
@@ -918,25 +929,55 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
 
   useEffect(() => { loadTopics() }, [loadTopics])
   useEffect(() => { loadItems(selPlanId) }, [selPlanId, loadItems])
+  useEffect(() => {
+    if (!selPlanId) { setPlanHolidays([]); return }
+    const selPlan = plans.find(p => String(p.id) === String(selPlanId))
+    const refDate = selPlan?.startDate || selPlan?.onlineStart
+    if (!refDate) { setPlanHolidays([]); return }
+    const y1 = parseInt(String(refDate).slice(0, 4), 10)
+    const ceY1 = y1 >= 2400 ? y1 - 543 : y1
+    const endDate = selPlan?.endDate || selPlan?.onlineEnd
+    const y2 = endDate ? parseInt(String(endDate).slice(0, 4), 10) : ceY1
+    const ceY2 = y2 >= 2400 ? y2 - 543 : y2
+    const years = [...new Set([ceY1, ceY2])]
+    Promise.all(years.map(yr => fetch(`/api/holidays?year=${yr}&isActive=Y`).then(r => r.json()).catch(() => [])))
+      .then(res => setPlanHolidays(res.flat().filter(h => h.holiday_date)))
+  }, [selPlanId, plans])
 
   // ── Topics CRUD ──
   const addTopic = async () => {
     if (!newTopic.trim()) return
-    const r = await api.post('/masterplan-topics', { title: newTopic.trim(), sortOrder: topics.length })
-    setTopics(prev => [...prev, r])
+    const sortOrder = newTopicOrder !== '' ? Number(newTopicOrder) : (topics.length > 0 ? Math.max(...topics.map(t => t.sortOrder ?? 0)) + 1 : 1)
+    const r = await api.post('/masterplan-topics', { title: newTopic.trim(), sortOrder })
+    setTopics(prev => [...prev, r].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)))
     setNewTopic('')
+    setNewTopicOrder('')
   }
   const saveTopic = async (id) => {
     if (!editTopicTitle.trim()) return
-    await api.put(`/masterplan-topics/${id}`, { title: editTopicTitle.trim() })
-    setTopics(prev => prev.map(t => t.id === id ? { ...t, title: editTopicTitle.trim() } : t))
+    const sortOrder = editTopicOrder !== '' ? Number(editTopicOrder) : (topics.find(t => t.id === id)?.sortOrder ?? 0)
+    await api.put(`/masterplan-topics/${id}`, { title: editTopicTitle.trim(), sortOrder })
+    setTopics(prev => prev.map(t => t.id === id ? { ...t, title: editTopicTitle.trim(), sortOrder } : t).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)))
     setEditTopicId(null)
+    setEditTopicOrder('')
   }
   const deleteTopic = async (id) => {
     if (!window.confirm('ลบหัวข้อนี้?')) return
     await api.del(`/masterplan-topics/${id}`)
     setTopics(prev => prev.filter(t => t.id !== id))
   }
+
+  // ── Holiday helpers ──
+  const getHolidaysInRange = (start, end) => {
+    if (!start || planHolidays.length === 0) return []
+    const s = start.slice(0, 10)
+    const e = (end || start).slice(0, 10)
+    return planHolidays.filter(h => {
+      const hd = String(h.holiday_date).slice(0, 10)
+      return hd >= s && hd <= e
+    })
+  }
+  const hasHolidayInRange = (start, end) => getHolidaysInRange(start, end).length > 0
 
   // ── Items ──
   const savedItemCount = items.filter(r => !String(r.id).startsWith('new_')).length
@@ -951,16 +992,27 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
     const projStart   = toDateStr(selPlan?.startDate)
     const projEnd     = toDateStr(selPlan?.endDate)
 
-    const sorted = [...topics].sort((a, b) => a.id - b.id)
+    // สูตรช่วงวันตาม index (0-based)
+    // index 0-5  → ช่วง Online
+    // index 6-9  → สัปดาห์ที่ 1 (projStart + 0-6 วัน)
+    // index 10-12 → สัปดาห์ที่ 2 (projStart + 7-13 วัน)
+    // index 13-14 → สัปดาห์ที่ 3 (projStart + 14-20 วัน)
+    // index 15+   → ช่วงโครงการ (fallback)
+    const getDateRange = (i) => {
+      if (i < 6) return { s: onlineStart, e: onlineEnd }
+      if (i < 10) return { s: projStart, e: addDays(projStart, 6) }
+      if (i < 13) return { s: addDays(projStart, 7), e: addDays(projStart, 13) }
+      if (i < 15) return { s: addDays(projStart, 14), e: addDays(projStart, 20) }
+      return { s: projStart, e: projEnd }
+    }
+
+    const sorted = [...topics].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     const newRows = sorted.map((t, i) => {
-      // ลำดับที่ 1–3 (index 0–2): ใช้ช่วงวัน Online
-      // ลำดับที่ 4–21 (index 3–20): ใช้ช่วงวันโครงการ
-      const useOnline = i < 3
+      const { s, e } = getDateRange(i)
       return {
         id: `new_${Date.now()}_${i}`, isNew: true,
         planId: selPlanId, topicTitle: t.title,
-        startDate: useOnline ? onlineStart : projStart,
-        endDate:   useOnline ? onlineEnd   : projEnd,
+        startDate: s, endDate: e,
         startTime: '', endTime: '',
         taskDetail: '', responsible: '', hospitalResponsible: '', preparation: '', sortOrder: i, status: 'pending',
       }
@@ -1153,12 +1205,15 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
             <div>
               <div style={{ fontWeight: 700, color: '#1e3a5f', marginBottom: 16 }}>หัวข้อการปฏิบัติงาน (Template)</div>
               {/* Add new topic */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+                <input type="number" value={newTopicOrder} onChange={e => setNewTopicOrder(e.target.value)}
+                  placeholder="ลำดับ"
+                  style={{ width: 72, padding: '9px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, textAlign: 'center' }} />
                 <input value={newTopic} onChange={e => setNewTopic(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && addTopic()}
                   placeholder="พิมพ์หัวข้อการปฏิบัติงาน..."
                   style={{ flex: 1, padding: '9px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
-                <button onClick={addTopic} disabled={!newTopic.trim()} style={{ padding: '9px 20px', background: newTopic.trim() ? '#1e3a5f' : '#e2e8f0', color: newTopic.trim() ? '#fff' : '#94a3b8', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: newTopic.trim() ? 'pointer' : 'default' }}>+ เพิ่ม</button>
+                <button onClick={addTopic} disabled={!newTopic.trim()} style={{ padding: '9px 20px', background: newTopic.trim() ? '#1e3a5f' : '#e2e8f0', color: newTopic.trim() ? '#fff' : '#94a3b8', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: newTopic.trim() ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
               </div>
               {topics.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8', background: '#f8fafc', borderRadius: 10, border: '1px dashed #e2e8f0' }}>
@@ -1167,22 +1222,44 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
                 </div>
               ) : (
                 <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                  {/* Header */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr auto', gap: 8, padding: '8px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
+                    <span>ลำดับ</span>
+                    <span>หัวข้อการปฏิบัติงาน</span>
+                    <span />
+                  </div>
                   {topics.map((t, i) => (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: i < topics.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#fff' }}>
-                      <span style={{ width: 26, height: 26, background: '#1e3a5f', color: '#fff', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                    <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '64px 1fr auto', gap: 8, alignItems: 'center', padding: '8px 14px', borderBottom: i < topics.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#fff' }}>
                       {editTopicId === t.id ? (
                         <>
+                          {/* order input */}
+                          <input type="number" value={editTopicOrder} onChange={e => setEditTopicOrder(e.target.value)}
+                            style={{ width: '100%', padding: '5px 8px', border: '1.5px solid #0891b2', borderRadius: 6, fontSize: 13, textAlign: 'center' }} />
+                          {/* title input */}
                           <input value={editTopicTitle} onChange={e => setEditTopicTitle(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') saveTopic(t.id); if (e.key === 'Escape') setEditTopicId(null) }}
-                            style={{ flex: 1, padding: '6px 10px', border: '1.5px solid #0891b2', borderRadius: 6, fontSize: 13 }} autoFocus />
-                          <button onClick={() => saveTopic(t.id)} style={{ padding: '5px 12px', background: '#0891b2', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>บันทึก</button>
-                          <button onClick={() => setEditTopicId(null)} style={{ padding: '5px 10px', background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+                            style={{ width: '100%', padding: '5px 10px', border: '1.5px solid #0891b2', borderRadius: 6, fontSize: 13 }} autoFocus />
+                          {/* actions */}
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => saveTopic(t.id)} style={{ padding: '5px 12px', background: '#0891b2', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>บันทึก</button>
+                            <button onClick={() => { setEditTopicId(null); setEditTopicOrder('') }} style={{ padding: '5px 10px', background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+                          </div>
                         </>
                       ) : (
                         <>
-                          <span style={{ flex: 1, fontSize: 14, color: '#1e293b' }}>{t.title}</span>
-                          <button onClick={() => { setEditTopicId(t.id); setEditTopicTitle(t.title) }} style={{ padding: '4px 10px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>แก้ไข</button>
-                          <button onClick={() => deleteTopic(t.id)} style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>ลบ</button>
+                          {/* order badge */}
+                          <span style={{ width: 32, height: 32, background: '#1e3a5f', color: '#fff', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                            {t.sortOrder ?? i + 1}
+                          </span>
+                          {/* title */}
+                          <span style={{ fontSize: 14, color: '#1e293b' }}>{t.title}</span>
+                          {/* actions */}
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => { setEditTopicId(t.id); setEditTopicTitle(t.title); setEditTopicOrder(String(t.sortOrder ?? '')) }}
+                              style={{ padding: '4px 10px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>แก้ไข</button>
+                            <button onClick={() => deleteTopic(t.id)}
+                              style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>ลบ</button>
+                          </div>
                         </>
                       )}
                     </div>
@@ -1230,6 +1307,18 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
                 )}
               </div>
 
+              {/* Holiday notice */}
+              {planHolidays.length > 0 && items.length > 0 && (() => {
+                const conflicts = items.filter(r => hasHolidayInRange(r.startDate, r.endDate))
+                if (conflicts.length === 0) return null
+                return (
+                  <div style={{ marginBottom: 12, padding: '10px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12 }}>
+                    <span style={{ fontWeight: 700, color: '#dc2626' }}>⚠️ มีวันหยุดในช่วงเวลาที่กำหนด {conflicts.length} รายการ</span>
+                    <span style={{ color: '#ef4444', marginLeft: 8 }}>— แถวที่มีวันหยุดจะแสดงพื้นหลังสีแดง</span>
+                  </div>
+                )
+              })()}
+
               {/* Items table - editable */}
               {items.length > 0 ? (
                 <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10 }}>
@@ -1263,7 +1352,13 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
                           )}
                         </td>
                       </tr>
-                      {items.map((row, idx) => (
+                      {items.map((row, idx) => {
+                        const hols = getHolidaysInRange(row.startDate, row.endDate)
+                        const hasHol = hols.length > 0
+                        const holTip = hasHol ? hols.map(h => `${String(h.holiday_date).slice(5).replace('-', '/')} ${h.holiday_name_th}`).join(', ') : ''
+                        const dateBg = hasHol ? '#fef2f2' : 'transparent'
+                        const dateBorder = hasHol ? '#fca5a5' : '#e2e8f0'
+                        return (
                         <>
                           <tr key={row.id}
                             style={{ background: String(row.id).startsWith('new_') ? '#f0fdf4' : '#fff', outline: dragOverRow === row.id ? '2px solid #0891b2' : 'none', opacity: dragRow === row.id ? 0.4 : 1 }}
@@ -1277,8 +1372,13 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
                             >⠿</td>
                             <td style={{ ...td, color: '#94a3b8', textAlign: 'center', width: 32 }}>{idx + 1}</td>
                             <td style={td}><input value={row.topicTitle} onChange={e => updateItem(row.id, 'topicTitle', e.target.value)} style={inp} /></td>
-                            <td style={td}><DateInput value={row.startDate} onChange={v => updateItem(row.id, 'startDate', v)} style={{ ...inp, width: '100%' }} /></td>
-                            <td style={td}><DateInput value={row.endDate} onChange={v => updateItem(row.id, 'endDate', v)} style={{ ...inp, width: '100%' }} /></td>
+                            <td style={{ ...td, background: dateBg }} title={holTip}>
+                              {hasHol && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, marginBottom: 2 }}>⚠️ มีวันหยุด</div>}
+                              <DateInput value={row.startDate} onChange={v => updateItem(row.id, 'startDate', v)} style={{ ...inp, width: '100%', borderColor: dateBorder }} />
+                            </td>
+                            <td style={{ ...td, background: dateBg }} title={holTip}>
+                              <DateInput value={row.endDate} onChange={v => updateItem(row.id, 'endDate', v)} style={{ ...inp, width: '100%', borderColor: dateBorder }} />
+                            </td>
                             <td style={td}><TimePicker value={row.startTime} onChange={val => updateItem(row.id, 'startTime', val)} style={{ width: '100%' }} /></td>
                             <td style={td}><TimePicker value={row.endTime} onChange={val => updateItem(row.id, 'endTime', val)} style={{ width: '100%' }} /></td>
                             <td style={td}><textarea value={row.taskDetail} onChange={e => updateItem(row.id, 'taskDetail', e.target.value)} rows={2} style={{ ...inp, resize: 'vertical' }} /></td>
@@ -1319,7 +1419,8 @@ function MasterPlanModal({ onClose, plans, teamMembers, hospitals, onSaved, defa
                             </td>
                           </tr>
                         </>
-                      ))}
+                      )
+                      })}
                     </tbody>
                   </table>
                 </div>

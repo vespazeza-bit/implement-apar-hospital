@@ -172,14 +172,14 @@ export function AppProvider({ children }) {
 
   // ── Plans CRUD ─────────────────────────────────────────────────────────────
   const addPlan = async (form) => {
-    const res = await api.post('/plans', form)
-    setProjectPlans(prev => [...prev, res])
-    return res
+    await api.post('/plans', form)
+    const data = await api.get('/plans')
+    setProjectPlans(data)
   }
   const updatePlan = async (id, form) => {
-    const res = await api.put(`/plans/${id}`, form)
-    setProjectPlans(prev => prev.map(p => p.id === id ? res : p))
-    return res
+    await api.put(`/plans/${id}`, form)
+    const data = await api.get('/plans')
+    setProjectPlans(data)
   }
   const deletePlan = async (id) => {
     await api.del(`/plans/${id}`)
