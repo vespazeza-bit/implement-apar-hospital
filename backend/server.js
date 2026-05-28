@@ -404,13 +404,17 @@ app.get('/api/basic-entries/summary', async (req, res) => {
   try {
     const [r] = await pool.query(
       `SELECT hospital_id, COUNT(*) AS total,
-              SUM(status = 'done') AS done
+              SUM(status='done')       AS done,
+              SUM(status='inprogress') AS inprogress,
+              SUM(status='waiting')    AS waiting
        FROM basic_checklist_entries
        GROUP BY hospital_id`)
     res.json(r.map(x => ({
-      hospitalId: String(x.hospital_id),
-      total: Number(x.total),
-      done: Number(x.done),
+      hospitalId:  String(x.hospital_id),
+      total:       Number(x.total),
+      done:        Number(x.done),
+      inprogress:  Number(x.inprogress),
+      waiting:     Number(x.waiting),
     })))
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
@@ -536,12 +540,16 @@ app.get('/api/form-entries/summary', async (req, res) => {
   try {
     const [r] = await pool.query(
       `SELECT hospital_id, COUNT(*) AS total,
+              SUM(status = 'waiting_form') AS waiting,
+              SUM(status IN ('drawn','waiting_code','waiting_review','revision')) AS inprogress,
               SUM(status = 'done') AS done
        FROM form_checklist_entries
        GROUP BY hospital_id`)
     res.json(r.map(x => ({
       hospitalId: String(x.hospital_id),
       total: Number(x.total),
+      waiting: Number(x.waiting),
+      inprogress: Number(x.inprogress),
       done: Number(x.done),
     })))
   } catch (e) { res.status(500).json({ error: e.message }) }
@@ -639,12 +647,16 @@ app.get('/api/report-entries/summary', async (req, res) => {
   try {
     const [r] = await pool.query(
       `SELECT hospital_id, COUNT(*) AS total,
+              SUM(status = 'waiting_form') AS waiting,
+              SUM(status IN ('drawn','waiting_code','waiting_review','revision')) AS inprogress,
               SUM(status = 'done') AS done
        FROM report_checklist_entries
        GROUP BY hospital_id`)
     res.json(r.map(x => ({
       hospitalId: String(x.hospital_id),
       total: Number(x.total),
+      waiting: Number(x.waiting),
+      inprogress: Number(x.inprogress),
       done: Number(x.done),
     })))
   } catch (e) { res.status(500).json({ error: e.message }) }
@@ -870,6 +882,27 @@ async function runMigrations() {
     }
   }
 
+  // สร้างตาราง document_tracking ถ้ายังไม่มี
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS document_tracking (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        plan_id INT NOT NULL,
+        member_id VARCHAR(50) DEFAULT '',
+        member_name VARCHAR(255) NOT NULL,
+        track_date DATE NOT NULL,
+        status VARCHAR(50) DEFAULT 'not_sent',
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_plan_member_date (plan_id, member_name, track_date)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `)
+    console.log('✅ Migration: ตาราง document_tracking พร้อมใช้งาน')
+  } catch (e) {
+    console.error('❌ Migration error (document_tracking):', e.message)
+  }
+
   // สร้างตาราง basic_checklist_entries ถ้ายังไม่มี
   try {
     await pool.query(`
@@ -1036,7 +1069,608 @@ async function runMigrations() {
   } catch (e) {
     console.error('❌ Migration error (masterplan_items):', e.message)
   }
+
+  // ── Holiday Management ─────────────────────────────────────────────────────
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holiday_type (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(20) NOT NULL UNIQUE,
+        type_name VARCHAR(100) NOT NULL,
+        color_code VARCHAR(20) DEFAULT '#6b7280',
+        is_active CHAR(1) DEFAULT 'Y',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `)
+    // Seed default types
+    const defaults = [
+      ['GOV',  'วันหยุดราชการ',         '#dc2626'],
+      ['ORG',  'วันหยุดองค์กร',          '#2563eb'],
+      ['SPEC', 'วันหยุดพิเศษ',           '#7c3aed'],
+      ['COMP', 'วันหยุดชดเชย',           '#d97706'],
+      ['DEPT', 'วันหยุดเฉพาะหน่วยงาน',  '#16a34a'],
+    ]
+    for (const [code, name, color] of defaults) {
+      await pool.query(
+        'INSERT IGNORE INTO holiday_type (code, type_name, color_code) VALUES (?,?,?)',
+        [code, name, color]
+      )
+    }
+    console.log('✅ Migration: ตาราง holiday_type พร้อมใช้งาน')
+  } catch (e) {
+    console.error('❌ Migration error (holiday_type):', e.message)
+  }
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holiday (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        holiday_date DATE NOT NULL,
+        holiday_end_date DATE NULL,
+        holiday_name_th VARCHAR(300) NOT NULL,
+        holiday_name_en VARCHAR(300) DEFAULT '',
+        holiday_type_id INT NULL,
+        is_compensate CHAR(1) DEFAULT 'N',
+        is_all_org CHAR(1) DEFAULT 'Y',
+        color_code VARCHAR(20) DEFAULT '',
+        is_active CHAR(1) DEFAULT 'Y',
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `)
+    console.log('✅ Migration: ตาราง holiday พร้อมใช้งาน')
+  } catch (e) {
+    console.error('❌ Migration error (holiday):', e.message)
+  }
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holiday_rules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rule_name VARCHAR(200) NOT NULL,
+        rule_name_en VARCHAR(200) DEFAULT '',
+        rule_type ENUM('weekend','weekday','fixed_date','nth_weekday','fixed_date_range') NOT NULL DEFAULT 'fixed_date',
+        day_of_week TINYINT NULL COMMENT '0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat',
+        fix_month TINYINT NULL COMMENT '1-12',
+        fix_day TINYINT NULL COMMENT '1-31',
+        fix_end_month TINYINT NULL COMMENT '1-12 (end of date range)',
+        fix_end_day TINYINT NULL COMMENT '1-31 (end of date range)',
+        nth_week TINYINT NULL COMMENT '1-5',
+        nth_month TINYINT NULL COMMENT '1-12 or NULL=every month',
+        holiday_type_id INT NULL,
+        color_code VARCHAR(20) DEFAULT '',
+        is_active CHAR(1) DEFAULT 'Y',
+        note TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `)
+    console.log('✅ Migration: ตาราง holiday_rules พร้อมใช้งาน')
+  } catch (e) {
+    console.error('❌ Migration error (holiday_rules):', e.message)
+  }
+
+  // Alter existing holiday_rules table to add new columns / update ENUM
+  try {
+    await pool.query(`ALTER TABLE holiday_rules ADD COLUMN IF NOT EXISTS fix_end_month TINYINT NULL COMMENT '1-12 (end of date range)' AFTER fix_day`)
+    await pool.query(`ALTER TABLE holiday_rules ADD COLUMN IF NOT EXISTS fix_end_day TINYINT NULL COMMENT '1-31 (end of date range)' AFTER fix_end_month`)
+    await pool.query(`ALTER TABLE holiday_rules MODIFY COLUMN rule_type ENUM('weekend','weekday','fixed_date','nth_weekday','fixed_date_range') NOT NULL DEFAULT 'fixed_date'`)
+  } catch (e) {
+    console.error('❌ Migration alter holiday_rules:', e.message)
+  }
+
+  // standby_schedules
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS standby_schedules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        plan_id INT NOT NULL,
+        member_id VARCHAR(20) DEFAULT '',
+        member_name VARCHAR(200) NOT NULL,
+        schedule_date DATE NOT NULL,
+        status VARCHAR(20) DEFAULT 'standby' COMMENT 'onsite|standby|wfh|off|holiday',
+        note TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_schedule (plan_id, member_name, schedule_date)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `)
+    console.log('✅ Migration: ตาราง standby_schedules พร้อมใช้งาน')
+  } catch (e) {
+    console.error('❌ Migration error (standby_schedules):', e.message)
+  }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOLIDAY MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET holiday types
+app.get('/api/holiday-types', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM holiday_type ORDER BY id')
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// POST holiday type
+app.post('/api/holiday-types', async (req, res) => {
+  const { code, typeName, colorCode, isActive } = req.body
+  try {
+    const [r] = await pool.query(
+      'INSERT INTO holiday_type (code, type_name, color_code, is_active) VALUES (?,?,?,?)',
+      [code, typeName, colorCode || '#6b7280', isActive ?? 'Y']
+    )
+    const [[row]] = await pool.query('SELECT * FROM holiday_type WHERE id=?', [r.insertId])
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// PUT holiday type
+app.put('/api/holiday-types/:id', async (req, res) => {
+  const { code, typeName, colorCode, isActive } = req.body
+  try {
+    await pool.query(
+      'UPDATE holiday_type SET code=?, type_name=?, color_code=?, is_active=? WHERE id=?',
+      [code, typeName, colorCode || '#6b7280', isActive ?? 'Y', req.params.id]
+    )
+    const [[row]] = await pool.query('SELECT * FROM holiday_type WHERE id=?', [req.params.id])
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// DELETE holiday type
+app.delete('/api/holiday-types/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM holiday_type WHERE id=?', [req.params.id])
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// GET holidays (with filters)
+app.get('/api/holidays', async (req, res) => {
+  const { year, typeId, isActive } = req.query
+  try {
+    let sql = `SELECT h.*, ht.type_name, ht.code as type_code, ht.color_code as type_color
+               FROM holiday h LEFT JOIN holiday_type ht ON h.holiday_type_id = ht.id WHERE 1=1`
+    const params = []
+    if (year) { sql += ' AND YEAR(h.holiday_date) = ?'; params.push(year) }
+    if (typeId) { sql += ' AND h.holiday_type_id = ?'; params.push(typeId) }
+    if (isActive) { sql += ' AND h.is_active = ?'; params.push(isActive) }
+    sql += ' ORDER BY h.holiday_date'
+    const [rows] = await pool.query(sql, params)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// POST holiday
+app.post('/api/holidays', async (req, res) => {
+  const { holidayDate, holidayEndDate, holidayNameTh, holidayNameEn, holidayTypeId, isCompensate, isAllOrg, colorCode, isActive, note } = req.body
+  try {
+    // ตรวจสอบวันซ้ำ
+    const [[dup]] = await pool.query(
+      'SELECT id FROM holiday WHERE holiday_date=? AND id != 0', [holidayDate]
+    )
+    if (dup) return res.status(409).json({ error: `วันที่ ${holidayDate} มีวันหยุดอยู่แล้ว: id ${dup.id}` })
+    const [r] = await pool.query(
+      `INSERT INTO holiday (holiday_date, holiday_end_date, holiday_name_th, holiday_name_en, holiday_type_id, is_compensate, is_all_org, color_code, is_active, note)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [nd(holidayDate), nd(holidayEndDate), holidayNameTh, holidayNameEn || '', nn(holidayTypeId), isCompensate || 'N', isAllOrg || 'Y', colorCode || '', isActive || 'Y', note || '']
+    )
+    const [[row]] = await pool.query(
+      `SELECT h.*, ht.type_name, ht.code as type_code, ht.color_code as type_color
+       FROM holiday h LEFT JOIN holiday_type ht ON h.holiday_type_id = ht.id WHERE h.id=?`, [r.insertId]
+    )
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// PUT holiday
+app.put('/api/holidays/:id', async (req, res) => {
+  const { holidayDate, holidayEndDate, holidayNameTh, holidayNameEn, holidayTypeId, isCompensate, isAllOrg, colorCode, isActive, note } = req.body
+  try {
+    await pool.query(
+      `UPDATE holiday SET holiday_date=?, holiday_end_date=?, holiday_name_th=?, holiday_name_en=?,
+       holiday_type_id=?, is_compensate=?, is_all_org=?, color_code=?, is_active=?, note=? WHERE id=?`,
+      [nd(holidayDate), nd(holidayEndDate), holidayNameTh, holidayNameEn || '', nn(holidayTypeId), isCompensate || 'N', isAllOrg || 'Y', colorCode || '', isActive || 'Y', note || '', req.params.id]
+    )
+    const [[row]] = await pool.query(
+      `SELECT h.*, ht.type_name, ht.code as type_code, ht.color_code as type_color
+       FROM holiday h LEFT JOIN holiday_type ht ON h.holiday_type_id = ht.id WHERE h.id=?`, [req.params.id]
+    )
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// DELETE holiday
+app.delete('/api/holidays/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM holiday WHERE id=?', [req.params.id])
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// POST /api/holidays/generate — auto-generate Thai public holidays for a CE year
+app.post('/api/holidays/generate', async (req, res) => {
+  const { year } = req.body   // CE year e.g. 2026
+  if (!year) return res.status(400).json({ error: 'year required' })
+  try {
+    const [[govType]] = await pool.query("SELECT id FROM holiday_type WHERE code='GOV' LIMIT 1")
+    const [[compType]] = await pool.query("SELECT id FROM holiday_type WHERE code='COMP' LIMIT 1")
+    const govId  = govType?.id  || 1
+    const compId = compType?.id || 4
+
+    const fixed = [
+      { d: `${year}-01-01`, th: 'วันขึ้นปีใหม่',                         en: "New Year's Day",                tid: govId  },
+      { d: `${year}-04-06`, th: 'วันจักรี',                               en: 'Chakri Memorial Day',            tid: govId  },
+      { d: `${year}-04-13`, th: 'วันสงกรานต์',                            en: 'Songkran Festival',              tid: govId  },
+      { d: `${year}-04-14`, th: 'วันสงกรานต์',                            en: 'Songkran Festival',              tid: govId  },
+      { d: `${year}-04-15`, th: 'วันสงกรานต์',                            en: 'Songkran Festival',              tid: govId  },
+      { d: `${year}-05-01`, th: 'วันแรงงานแห่งชาติ',                      en: 'National Labour Day',            tid: govId  },
+      { d: `${year}-05-04`, th: 'วันฉัตรมงคล',                            en: 'Coronation Day',                 tid: govId  },
+      { d: `${year}-07-28`, th: 'วันเฉลิมพระชนมพรรษา รัชกาลที่ 10',      en: "HM King's Birthday",             tid: govId  },
+      { d: `${year}-08-12`, th: 'วันเฉลิมพระชนมพรรษา สมเด็จพระนางเจ้าฯ', en: "HM Queen's Birthday",            tid: govId  },
+      { d: `${year}-10-13`, th: 'วันนวมินทรมหาราช',                       en: 'King Bhumibol Memorial Day',     tid: govId  },
+      { d: `${year}-10-23`, th: 'วันปิยมหาราช',                           en: 'Chulalongkorn Day',              tid: govId  },
+      { d: `${year}-12-05`, th: 'วันเฉลิมพระชนมพรรษา รัชกาลที่ 9',       en: "Father's Day",                   tid: govId  },
+      { d: `${year}-12-10`, th: 'วันรัฐธรรมนูญ',                          en: 'Constitution Day',               tid: govId  },
+      { d: `${year}-12-31`, th: 'วันสิ้นปี',                              en: "New Year's Eve",                 tid: govId  },
+    ]
+
+    const inserted = [], skipped = []
+    for (const h of fixed) {
+      const [[dup]] = await pool.query('SELECT id FROM holiday WHERE holiday_date=?', [h.d])
+      if (dup) { skipped.push(h.d); continue }
+      await pool.query(
+        'INSERT INTO holiday (holiday_date, holiday_name_th, holiday_name_en, holiday_type_id, is_compensate, is_all_org, is_active) VALUES (?,?,?,?,?,?,?)',
+        [h.d, h.th, h.en, h.tid, 'N', 'Y', 'Y']
+      )
+      inserted.push(h.d)
+    }
+    res.json({ inserted: inserted.length, skipped: skipped.length, insertedDates: inserted, skippedDates: skipped })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// POST /api/holidays/import — bulk import
+app.post('/api/holidays/import', async (req, res) => {
+  const { rows } = req.body  // [{ holidayDate, holidayNameTh, holidayTypeId, ... }]
+  if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows array required' })
+  try {
+    let inserted = 0, skipped = 0
+    for (const h of rows) {
+      if (!h.holidayDate || !h.holidayNameTh) { skipped++; continue }
+      const [[dup]] = await pool.query('SELECT id FROM holiday WHERE holiday_date=?', [h.holidayDate])
+      if (dup) { skipped++; continue }
+      await pool.query(
+        'INSERT INTO holiday (holiday_date, holiday_end_date, holiday_name_th, holiday_name_en, holiday_type_id, is_compensate, is_all_org, is_active, note) VALUES (?,?,?,?,?,?,?,?,?)',
+        [nd(h.holidayDate), nd(h.holidayEndDate), h.holidayNameTh, h.holidayNameEn || '', nn(h.holidayTypeId), h.isCompensate || 'N', h.isAllOrg || 'Y', h.isActive || 'Y', h.note || '']
+      )
+      inserted++
+    }
+    res.json({ inserted, skipped })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOLIDAY RULES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DOW_TH = ['วันอาทิตย์','วันจันทร์','วันอังคาร','วันพุธ','วันพฤหัสบดี','วันศุกร์','วันเสาร์']
+const DOW_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+
+app.get('/api/holiday-rules', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT r.*, ht.type_name, ht.color_code as type_color
+       FROM holiday_rules r LEFT JOIN holiday_type ht ON r.holiday_type_id = ht.id
+       ORDER BY r.id`
+    )
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/holiday-rules', async (req, res) => {
+  const { ruleName, ruleNameEn, ruleType, dayOfWeek, fixMonth, fixDay, fixEndMonth, fixEndDay, nthWeek, nthMonth, holidayTypeId, colorCode, isActive, note } = req.body
+  try {
+    const [r] = await pool.query(
+      `INSERT INTO holiday_rules (rule_name,rule_name_en,rule_type,day_of_week,fix_month,fix_day,fix_end_month,fix_end_day,nth_week,nth_month,holiday_type_id,color_code,is_active,note)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [ruleName, ruleNameEn||'', ruleType,
+       dayOfWeek!=null ? Number(dayOfWeek) : null,
+       fixMonth||null, fixDay||null, fixEndMonth||null, fixEndDay||null,
+       nthWeek||null, nthMonth||null,
+       nn(holidayTypeId), colorCode||'', isActive||'Y', note||'']
+    )
+    const [[row]] = await pool.query(
+      'SELECT r.*, ht.type_name, ht.color_code as type_color FROM holiday_rules r LEFT JOIN holiday_type ht ON r.holiday_type_id=ht.id WHERE r.id=?',
+      [r.insertId]
+    )
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.put('/api/holiday-rules/:id', async (req, res) => {
+  const { ruleName, ruleNameEn, ruleType, dayOfWeek, fixMonth, fixDay, fixEndMonth, fixEndDay, nthWeek, nthMonth, holidayTypeId, colorCode, isActive, note } = req.body
+  try {
+    await pool.query(
+      `UPDATE holiday_rules SET rule_name=?,rule_name_en=?,rule_type=?,day_of_week=?,fix_month=?,fix_day=?,fix_end_month=?,fix_end_day=?,nth_week=?,nth_month=?,holiday_type_id=?,color_code=?,is_active=?,note=? WHERE id=?`,
+      [ruleName, ruleNameEn||'', ruleType,
+       dayOfWeek!=null ? Number(dayOfWeek) : null,
+       fixMonth||null, fixDay||null, fixEndMonth||null, fixEndDay||null,
+       nthWeek||null, nthMonth||null,
+       nn(holidayTypeId), colorCode||'', isActive||'Y', note||'', req.params.id]
+    )
+    const [[row]] = await pool.query(
+      'SELECT r.*, ht.type_name, ht.color_code as type_color FROM holiday_rules r LEFT JOIN holiday_type ht ON r.holiday_type_id=ht.id WHERE r.id=?',
+      [req.params.id]
+    )
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/holiday-rules/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM holiday_rules WHERE id=?', [req.params.id])
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// POST /api/holiday-rules/apply — apply all active rules for a given year
+app.post('/api/holiday-rules/apply', async (req, res) => {
+  const { year } = req.body
+  if (!year) return res.status(400).json({ error: 'year required' })
+  const ceYear = parseInt(year, 10) >= 2400 ? parseInt(year, 10) - 543 : parseInt(year, 10)
+  try {
+    const [rules] = await pool.query('SELECT * FROM holiday_rules WHERE is_active=?', ['Y'])
+    let inserted = 0, skipped = 0
+
+    const toLocalISO = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+    const tryInsert = async (date, rule) => {
+      const iso = toLocalISO(date)
+      const [[dup]] = await pool.query('SELECT id FROM holiday WHERE holiday_date=?', [iso])
+      if (dup) { skipped++; return }
+      await pool.query(
+        'INSERT INTO holiday (holiday_date,holiday_name_th,holiday_name_en,holiday_type_id,color_code,is_all_org,is_active) VALUES (?,?,?,?,?,?,?)',
+        [iso, rule.rule_name, rule.rule_name_en||'', rule.holiday_type_id||null, rule.color_code||'', 'Y', 'Y']
+      )
+      inserted++
+    }
+
+    for (const rule of rules) {
+      if (rule.rule_type === 'weekend') {
+        for (let d = new Date(ceYear, 0, 1); d.getFullYear() === ceYear; d.setDate(d.getDate() + 1)) {
+          const dow = d.getDay()
+          if (dow === 0 || dow === 6) {
+            const r2 = { ...rule, rule_name: rule.rule_name || DOW_TH[dow], rule_name_en: rule.rule_name_en || DOW_EN[dow] }
+            await tryInsert(new Date(d), r2)
+          }
+        }
+      } else if (rule.rule_type === 'weekday') {
+        const dow = rule.day_of_week
+        for (let d = new Date(ceYear, 0, 1); d.getFullYear() === ceYear; d.setDate(d.getDate() + 1)) {
+          if (d.getDay() === dow) await tryInsert(new Date(d), rule)
+        }
+      } else if (rule.rule_type === 'fixed_date') {
+        const d = new Date(ceYear, rule.fix_month - 1, rule.fix_day)
+        if (d.getMonth() === rule.fix_month - 1) await tryInsert(d, rule)
+      } else if (rule.rule_type === 'fixed_date_range') {
+        const start = new Date(ceYear, rule.fix_month - 1, rule.fix_day)
+        const end = new Date(ceYear, rule.fix_end_month - 1, rule.fix_end_day)
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          await tryInsert(new Date(d), rule)
+        }
+      } else if (rule.rule_type === 'nth_weekday') {
+        const months = rule.nth_month ? [rule.nth_month] : [1,2,3,4,5,6,7,8,9,10,11,12]
+        for (const m of months) {
+          let count = 0
+          for (let day = 1; day <= 31; day++) {
+            const d = new Date(ceYear, m - 1, day)
+            if (d.getMonth() !== m - 1) break
+            if (d.getDay() === rule.day_of_week) {
+              count++
+              if (count === rule.nth_week) { await tryInsert(d, rule); break }
+            }
+          }
+        }
+      }
+    }
+    res.json({ inserted, skipped, total: inserted + skipped, year: ceYear })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STAND BY SCHEDULE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/standby', async (req, res) => {
+  try {
+    const { planId, startDate, endDate } = req.query
+    let q = 'SELECT * FROM standby_schedules WHERE 1=1'
+    const params = []
+    if (planId) { q += ' AND plan_id=?'; params.push(planId) }
+    if (startDate) { q += ' AND schedule_date>=?'; params.push(startDate) }
+    if (endDate)   { q += ' AND schedule_date<=?'; params.push(endDate) }
+    q += ' ORDER BY schedule_date, member_name'
+    const [rows] = await pool.query(q, params)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Upsert single cell
+app.post('/api/standby', async (req, res) => {
+  const { planId, memberId, memberName, scheduleDate, status, note } = req.body
+  try {
+    await pool.query(
+      `INSERT INTO standby_schedules (plan_id,member_id,member_name,schedule_date,status,note)
+       VALUES (?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE status=VALUES(status), note=VALUES(note), updated_at=NOW()`,
+      [planId, memberId||'', memberName, scheduleDate, status||'standby', note||'']
+    )
+    const [[row]] = await pool.query(
+      'SELECT * FROM standby_schedules WHERE plan_id=? AND member_name=? AND schedule_date=?',
+      [planId, memberName, scheduleDate]
+    )
+    res.json(row)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Delete single cell (clear status)
+app.delete('/api/standby', async (req, res) => {
+  const { planId, memberName, scheduleDate } = req.body
+  try {
+    await pool.query(
+      'DELETE FROM standby_schedules WHERE plan_id=? AND member_name=? AND schedule_date=?',
+      [planId, memberName, scheduleDate]
+    )
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Delete all schedules for a plan
+app.delete('/api/standby/plan/:planId', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM standby_schedules WHERE plan_id=?', [req.params.planId])
+    res.json({ ok: true, deleted: result.affectedRows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Batch upsert — auto-fill standby for all members × all dates
+app.post('/api/standby/batch', async (req, res) => {
+  try {
+    const { records } = req.body
+    if (!records?.length) return res.json({ ok: true, count: 0 })
+    const values = records.map(r => [r.planId, r.memberId || '', r.memberName, r.scheduleDate, r.status || 'standby', ''])
+    await pool.query(
+      `INSERT INTO standby_schedules (plan_id,member_id,member_name,schedule_date,status,note)
+       VALUES ? ON DUPLICATE KEY UPDATE status=VALUES(status), updated_at=NOW()`,
+      [values]
+    )
+    res.json({ ok: true, count: records.length })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Summary per plan — count distinct dates per status (excluding holidays), not member×date
+app.get('/api/standby/summary', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT plan_id,
+        COUNT(DISTINCT CASE WHEN status IN ('office','onsite') THEN schedule_date END) AS office_count,
+        COUNT(DISTINCT CASE WHEN status='standby'             THEN schedule_date END) AS standby_count,
+        COUNT(DISTINCT CASE WHEN status='wfh'                 THEN schedule_date END) AS wfh_count,
+        COUNT(DISTINCT CASE WHEN status='off'                 THEN schedule_date END) AS off_count,
+        COUNT(DISTINCT schedule_date)                                                  AS total_count,
+        COUNT(DISTINCT member_name)                                                    AS member_count
+      FROM standby_schedules
+      WHERE status != 'holiday'
+      GROUP BY plan_id
+    `)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Conflict check — members assigned onsite/standby/wfh in multiple plans on same day
+app.get('/api/standby/conflicts', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+    let q = `SELECT member_name, schedule_date, COUNT(DISTINCT plan_id) as plan_count,
+               GROUP_CONCAT(DISTINCT plan_id) as plan_ids
+             FROM standby_schedules
+             WHERE status NOT IN ('off','holiday')`
+    const params = []
+    if (startDate) { q += ' AND schedule_date>=?'; params.push(startDate) }
+    if (endDate)   { q += ' AND schedule_date<=?'; params.push(endDate) }
+    q += ' GROUP BY member_name, schedule_date HAVING plan_count > 1'
+    const [rows] = await pool.query(q, params)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT TRACKING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/doc-tracking', async (req, res) => {
+  try {
+    const { planId, startDate, endDate } = req.query
+    let q = 'SELECT * FROM document_tracking WHERE 1=1'
+    const params = []
+    if (planId)    { q += ' AND plan_id=?';     params.push(planId) }
+    if (startDate) { q += ' AND track_date>=?'; params.push(startDate) }
+    if (endDate)   { q += ' AND track_date<=?'; params.push(endDate) }
+    q += ' ORDER BY track_date, member_name'
+    const [rows] = await pool.query(q, params)
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/doc-tracking', async (req, res) => {
+  const { planId, memberId, memberName, trackDate, status, note } = req.body
+  try {
+    await pool.query(
+      `INSERT INTO document_tracking (plan_id,member_id,member_name,track_date,status,note)
+       VALUES (?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE status=VALUES(status), note=VALUES(note), updated_at=NOW()`,
+      [planId, memberId || '', memberName, trackDate, status || 'not_sent', note || '']
+    )
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/doc-tracking', async (req, res) => {
+  const { planId, memberName, trackDate } = req.body
+  try {
+    await pool.query(
+      `UPDATE document_tracking SET status='not_sent', updated_at=NOW()
+       WHERE plan_id=? AND member_name=? AND track_date=?`,
+      [planId, memberName, trackDate]
+    )
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/doc-tracking/plan/:planId', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM document_tracking WHERE plan_id=?', [req.params.planId])
+    res.json({ ok: true, deleted: result.affectedRows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/doc-tracking/batch', async (req, res) => {
+  try {
+    const { records } = req.body
+    if (!records?.length) return res.json({ ok: true, count: 0 })
+    for (const r of records) {
+      await pool.query(
+        `INSERT IGNORE INTO document_tracking (plan_id,member_id,member_name,track_date,status,note)
+         VALUES (?,?,?,?,?,?)`,
+        [r.planId, r.memberId || '', r.memberName, r.trackDate, r.status || 'not_sent', '']
+      )
+    }
+    res.json({ ok: true, count: records.length })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.get('/api/doc-tracking/summary', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT plan_id,
+        SUM(status = 'sent')                       AS sent,
+        SUM(status IN ('not_sent', 'pending'))      AS pending_count,
+        SUM(status = 'holiday')                    AS holiday_count,
+        COUNT(*)                                   AS total
+      FROM document_tracking
+      GROUP BY plan_id
+    `)
+    res.json(rows.map(r => ({
+      planId:       String(r.plan_id),
+      sent:         Number(r.sent         || 0),
+      pendingCount: Number(r.pending_count || 0),
+      holidayCount: Number(r.holiday_count || 0),
+      total:        Number(r.total         || 0),
+    })))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
 
 // ─── SPA fallback (ต้องอยู่หลัง API routes ทั้งหมด) ──────────────────────────
 app.get('/{*splat}', (req, res) => {

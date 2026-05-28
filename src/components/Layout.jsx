@@ -12,9 +12,12 @@ const MENU = [
   { path: '/checklist-form', icon: '📄', label: 'Check List', sub: 'แบบฟอร์ม' },
   { path: '/checklist-report', icon: '📈', label: 'Check List', sub: 'รายงาน' },
   { path: '/training-issues', icon: '🎓', label: 'สรุปปัญหาอบรม', sub: '' },
+  { path: '/standby-calendar', icon: '🗓️', label: 'ตาราง Stand By', sub: 'Stand By Schedule' },
+  { path: '/doc-tracking', icon: '📬', label: 'ติดตามการส่งเอกสาร', sub: 'Document Tracking' },
   { path: '/system-issues', icon: '🖥️', label: 'สรุปปัญหาขึ้นระบบ', sub: '' },
   { path: '/risk-analysis', icon: '⚠️', label: 'วิเคราะห์ความเสี่ยง', sub: 'รายงานผู้บริหาร' },
   { path: '/lessons-learned', icon: '📚', label: 'สรุปบทเรียน', sub: 'ถอดบทเรียนการติดตั้ง' },
+  { path: '/holiday', icon: '🗓️', label: 'จัดการวันหยุด', sub: 'Holiday Management' },
 ]
 
 export default function Layout() {

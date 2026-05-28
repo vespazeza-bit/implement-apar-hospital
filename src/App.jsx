@@ -15,6 +15,9 @@ import LessonsLearned from './pages/LessonsLearned'
 import Calendar from './pages/Calendar'
 import Hospitals from './pages/Hospitals'
 import Team from './pages/Team'
+import HolidayManagement from './pages/HolidayManagement'
+import StandByCalendar from './pages/StandByCalendar'
+import DocTracking from './pages/DocTracking'
 
 function PrivateRoute({ children }) {
   const user = localStorage.getItem('currentUser')
@@ -39,10 +42,13 @@ export default function App() {
             <Route path="checklist-form" element={<ChecklistForm />} />
             <Route path="checklist-report" element={<ChecklistReport />} />
             <Route path="training-issues" element={<TrainingSummary />} />
+            <Route path="standby-calendar" element={<StandByCalendar />} />
+            <Route path="doc-tracking" element={<DocTracking />} />
             <Route path="system-issues" element={<SystemSummary />} />
             <Route path="risk-analysis" element={<RiskAnalysis />} />
             <Route path="lessons-learned" element={<LessonsLearned />} />
             <Route path="calendar" element={<Calendar />} />
+            <Route path="holiday" element={<HolidayManagement />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

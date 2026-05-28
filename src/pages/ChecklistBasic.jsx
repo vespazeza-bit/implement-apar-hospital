@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import { api } from '../api'
-import SearchableSelect from '../components/SearchableSelect'
-
 const EMPTY_FORM = { systemName: '', itemName: '', detail: '', sortOrder: '' }
 const SYS_KEY = 'basicSystemNames'
+const toISO = (d) => d ? String(d).slice(0, 10) : ''
+const CUR_BE = new Date().getFullYear() + 543
+const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+const fmtShort = (iso) => { if (!iso) return ''; const [,m,d] = iso.split('-'); return `${parseInt(d)} ${THAI_MONTHS[parseInt(m)-1]}` }
 
 const STATUS_OPTS = [
   { value: 'waiting',    label: 'รอข้อมูล',          color: '#d97706', bg: '#fffbeb' },
@@ -23,7 +25,7 @@ const loadSystems = (masterItems) => {
 const saveSystems = (list) => localStorage.setItem(SYS_KEY, JSON.stringify(list))
 
 export default function ChecklistBasic() {
-  const { hospitals, basicMasterItems, addBasicMaster, updateBasicMaster, deleteBasicMaster, refreshBasicSummary } = useApp()
+  const { hospitals, basicMasterItems, projectPlans, addBasicMaster, updateBasicMaster, deleteBasicMaster, refreshBasicSummary } = useApp()
   const [activeTab, setActiveTab] = useState('checklist')
 
   // ── System management ──────────────────────────────────────────────────────
@@ -47,6 +49,12 @@ export default function ChecklistBasic() {
   const [importHosp, setImportHosp] = useState('')
   const [importRows, setImportRows] = useState([])
   const [saving, setSaving] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingEntry, setEditingEntry] = useState(null)
+  const [clView, setClView] = useState('list') // 'list' | 'detail'
+  const [hospSummaries, setHospSummaries] = useState([])
+  const [clSearch, setClSearch] = useState('')
+  const [clYear, setClYear] = useState(String(CUR_BE))
 
   useEffect(() => {
     if (basicMasterItems.length > 0 && !localStorage.getItem(SYS_KEY)) {
@@ -69,6 +77,15 @@ export default function ChecklistBasic() {
   }, [])
 
   useEffect(() => { loadEntries(checkHosp) }, [checkHosp, loadEntries])
+
+  const loadHospSummaries = useCallback(async () => {
+    try {
+      const data = await api.get('/basic-entries/summary')
+      setHospSummaries(Array.isArray(data) ? data : [])
+    } catch { setHospSummaries([]) }
+  }, [])
+
+  useEffect(() => { loadHospSummaries() }, [loadHospSummaries])
 
   // ── System CRUD ─────────────────────────────────────────────────────────────
   const addSystem = () => {
@@ -116,7 +133,7 @@ export default function ChecklistBasic() {
 
   // ── Import / เพิ่ม checklist ────────────────────────────────────────────────
   const openImport = () => {
-    setImportHosp(checkHosp || '')
+    setImportHosp(clView === 'detail' ? (checkHosp || '') : '')
     const rows = basicMasterItems.map(m => {
       const existing = entries.find(e => e.masterId === m.id)
       return { entryId: existing?.id || null, masterId: m.id, systemName: m.systemName, itemName: m.itemName, detail: m.detail, status: existing?.status || 'waiting' }
@@ -148,6 +165,7 @@ export default function ChecklistBasic() {
       await api.del(`/basic-entries/${row.entryId}`)
       setEntries(prev => prev.filter(e => e.id !== row.entryId))
       refreshBasicSummary()
+      loadHospSummaries()
     }
     setImportRows(prev => prev.filter((_, i) => i !== idx))
   }
@@ -163,9 +181,12 @@ export default function ChecklistBasic() {
     try {
       await api.post('/basic-entries/import', { hospitalId: importHosp, items: importRows })
       setShowImport(false)
-      if (checkHosp === importHosp) await loadEntries(importHosp)
-      else { setCheckHosp(importHosp) }
+      await loadHospSummaries()
+      setCheckHosp(importHosp)
+      setClView('detail')
+      await loadEntries(importHosp)
       refreshBasicSummary()
+      window.scrollTo({ top: 0 })
     } catch (e) { alert('เกิดข้อผิดพลาด: ' + e.message) }
     setSaving(false)
   }
@@ -176,6 +197,7 @@ export default function ChecklistBasic() {
     await api.del(`/basic-entries/${entryId}`)
     setEntries(prev => prev.filter(e => e.id !== entryId))
     refreshBasicSummary()
+    loadHospSummaries()
   }
 
   // อัปเดต status inline
@@ -185,7 +207,56 @@ export default function ChecklistBasic() {
     setEntries(prev => prev.map(e => e.id === entryId ? { ...e, status } : e))
     await api.put(`/basic-entries/${entryId}`, { status, note: entry.note || '' })
     refreshBasicSummary()
+    loadHospSummaries()
   }
+
+  const openEditModal = (entry) => { setEditingEntry({ ...entry }); setShowEditModal(true) }
+  const handleEditSave = async () => {
+    if (!editingEntry) return
+    setEntries(prev => prev.map(e => e.id === editingEntry.id ? { ...editingEntry } : e))
+    await api.put(`/basic-entries/${editingEntry.id}`, { status: editingEntry.status, note: editingEntry.note || '' })
+    refreshBasicSummary()
+    loadHospSummaries()
+    setShowEditModal(false)
+    setEditingEntry(null)
+  }
+
+  const availableYears = useMemo(() => {
+    const years = new Set([CUR_BE])
+    projectPlans.forEach(p => {
+      const s = toISO(p.startDate || p.onlineStart)
+      const e = toISO(p.endDate   || p.onlineEnd)
+      if (s) years.add(parseInt(s.slice(0,4)) + 543)
+      if (e) years.add(parseInt(e.slice(0,4)) + 543)
+    })
+    return [...years].sort((a, b) => b - a)
+  }, [projectPlans])
+
+  const filteredSummaries = useMemo(() => {
+    const q = clSearch.trim().toLowerCase()
+    const fy = Number(clYear) || 0
+    const hospIdsInYear = fy ? new Set(
+      projectPlans
+        .filter(p => {
+          const s = toISO(p.startDate || p.onlineStart)
+          const e = toISO(p.endDate   || p.onlineEnd)
+          const sy = s ? parseInt(s.slice(0,4)) + 543 : null
+          const ey = e ? parseInt(e.slice(0,4)) + 543 : null
+          if (!sy && !ey) return false
+          if (sy && ey) return sy <= fy && fy <= ey
+          return sy === fy || ey === fy
+        })
+        .map(p => String(p.hospitalId))
+    ) : null
+    return hospSummaries
+      .map(s => ({ ...s, hosp: hospitals.find(h => String(h.id) === String(s.hospitalId)) }))
+      .filter(s => {
+        if (!s.hosp) return false
+        if (hospIdsInYear && !hospIdsInYear.has(String(s.hospitalId))) return false
+        if (q && !s.hosp.name.toLowerCase().includes(q)) return false
+        return true
+      })
+  }, [hospSummaries, hospitals, clSearch, clYear, projectPlans])
 
   // ── Group entries by systemName ─────────────────────────────────────────────
   const groupedEntries = entries.reduce((acc, entry) => {
@@ -233,106 +304,295 @@ export default function ChecklistBasic() {
       {/* ════ Tab: Check List ════ */}
       {activeTab === 'checklist' && (
         <div>
-          {/* Toolbar */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button onClick={openImport} style={{
-              padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
-              borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-            }}>+ เพิ่ม / นำเข้ารายการ</button>
-            <SearchableSelect value={String(checkHosp || '')} onChange={setCheckHosp}
-              options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
-              placeholder="-- เลือกโรงพยาบาล --" style={{ minWidth: 220 }} />
-            {checkHosp && (() => {
-              const total = entries.length
-              const done = entries.filter(e => e.status === 'done').length
-              const pct = total > 0 ? Math.round((done / total) * 100) : 0
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 13, color: '#94a3b8' }}>
-                    {total} รายการ | เสร็จ {done} รายการ
-                  </span>
-                  <span style={{ fontSize: 13, color: '#64748b', fontWeight: 600 }}>ความคืบหน้า</span>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: pct === 100 ? '#16a34a' : pct > 0 ? '#0891b2' : '#94a3b8' }}>
-                    {pct}%
-                  </span>
-                  <div style={{ width: 80, background: '#e2e8f0', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-                    <div style={{ width: `${pct}%`, background: pct === 100 ? '#16a34a' : '#0891b2', height: '100%', borderRadius: 4, transition: 'width 0.3s' }} />
-                  </div>
+          {clView === 'list' ? (
+            /* ── List View ── */
+            <div>
+              {/* Toolbar */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={openImport} style={{
+                  padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
+                  borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                }}>+ นำเข้า / เพิ่ม Check List</button>
+                <select value={clYear} onChange={e => setClYear(e.target.value)} style={{
+                  padding: '9px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13,
+                  background: '#fff', cursor: 'pointer', fontWeight: clYear ? 600 : 400, color: clYear ? '#1e3a5f' : '#64748b',
+                }}>
+                  <option value="">ทุกปี</option>
+                  {availableYears.map(y => (
+                    <option key={y} value={String(y)}>ปี พ.ศ. {y}</option>
+                  ))}
+                </select>
+                <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+                  <input value={clSearch} onChange={e => setClSearch(e.target.value)}
+                    placeholder="ค้นหาโรงพยาบาล..."
+                    style={{ width: '100%', padding: '9px 36px 9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                  {clSearch && (
+                    <button onClick={() => setClSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16, padding: 0 }}>✕</button>
+                  )}
                 </div>
-              )
-            })()}
-          </div>
+                <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap' }}>{filteredSummaries.length} โรงพยาบาล</span>
+              </div>
 
-          {!checkHosp ? (
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>🗂️</div>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>กรุณาเลือกโรงพยาบาล</div>
-              <div style={{ fontSize: 13, marginTop: 4 }}>หรือกด "+ เพิ่ม / นำเข้ารายการ" เพื่อกำหนด check list</div>
-            </div>
-          ) : loadingEntries ? (
-            <div style={{ textAlign: 'center', padding: 60, color: '#94a3b8' }}>กำลังโหลด...</div>
-          ) : entries.length === 0 ? (
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>ยังไม่มี check list สำหรับโรงพยาบาลนี้</div>
-              <div style={{ fontSize: 13, marginTop: 4 }}>กด "+ เพิ่ม / นำเข้ารายการ" เพื่อนำรายการมาจากกำหนดข้อมูลพื้นฐาน</div>
-              <button onClick={openImport} style={{ marginTop: 16, padding: '9px 24px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ เพิ่ม / นำเข้ารายการ</button>
+              {filteredSummaries.length === 0 ? (
+                <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>🗂️</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>{clSearch ? 'ไม่พบโรงพยาบาลที่ค้นหา' : 'ยังไม่มีข้อมูล Check List'}</div>
+                  <div style={{ fontSize: 13, marginTop: 4 }}>กด "+ นำเข้า / เพิ่ม Check List" เพื่อเริ่มต้น</div>
+                </div>
+              ) : (
+                <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...thS, width: 50, textAlign: 'center' }}>#</th>
+                        <th style={thS}>โรงพยาบาล</th>
+                        <th style={{ ...thS, textAlign: 'center' }}>รายการทั้งหมด</th>
+                        <th style={{ ...thS, textAlign: 'center', background: '#fffbeb', color: '#d97706' }}>รอข้อมูล</th>
+                        <th style={{ ...thS, textAlign: 'center', background: '#eff6ff', color: '#0891b2' }}>กำลังดำเนินการ</th>
+                        <th style={{ ...thS, textAlign: 'center', background: '#f0fdf4', color: '#16a34a' }}>ดำเนินการแล้ว</th>
+                        <th style={{ ...thS, minWidth: 160 }}>ความคืบหน้า</th>
+                        <th style={{ ...thS, width: 120, textAlign: 'center' }}>จัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSummaries.map((s, idx) => {
+                        const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
+                        return (
+                          <tr key={s.hospitalId} style={{ background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
+                            <td style={{ ...tdS, textAlign: 'center', color: '#94a3b8', fontWeight: 600 }}>{idx + 1}</td>
+                            <td style={{ ...tdS, fontWeight: 600, color: '#1e293b' }}>{s.hosp?.name || `รพ. #${s.hospitalId}`}</td>
+                            <td style={{ ...tdS, textAlign: 'center', fontWeight: 700, color: '#374151' }}>{s.total}</td>
+                            <td style={{ ...tdS, textAlign: 'center' }}>
+                              {s.waiting > 0
+                                ? <span style={{ padding: '2px 10px', borderRadius: 20, background: '#fffbeb', color: '#d97706', fontSize: 13, fontWeight: 700 }}>{s.waiting}</span>
+                                : <span style={{ color: '#cbd5e1' }}>–</span>}
+                            </td>
+                            <td style={{ ...tdS, textAlign: 'center' }}>
+                              {s.inprogress > 0
+                                ? <span style={{ padding: '2px 10px', borderRadius: 20, background: '#eff6ff', color: '#0891b2', fontSize: 13, fontWeight: 700 }}>{s.inprogress}</span>
+                                : <span style={{ color: '#cbd5e1' }}>–</span>}
+                            </td>
+                            <td style={{ ...tdS, textAlign: 'center' }}>
+                              {s.done > 0
+                                ? <span style={{ padding: '2px 10px', borderRadius: 20, background: '#f0fdf4', color: '#16a34a', fontSize: 13, fontWeight: 700 }}>{s.done}</span>
+                                : <span style={{ color: '#cbd5e1' }}>–</span>}
+                            </td>
+                            <td style={tdS}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1, background: '#e2e8f0', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                                  <div style={{ width: `${pct}%`, background: pct === 100 ? '#16a34a' : '#0891b2', height: '100%', borderRadius: 4, transition: 'width 0.4s' }} />
+                                </div>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: pct === 100 ? '#16a34a' : pct > 0 ? '#0891b2' : '#94a3b8', minWidth: 36, textAlign: 'right' }}>{pct}%</span>
+                              </div>
+                            </td>
+                            <td style={{ ...tdS, textAlign: 'center' }}>
+                              <button
+                                onClick={() => { setCheckHosp(s.hospitalId); setClView('detail'); window.scrollTo({ top: 0 }) }}
+                                style={{ padding: '5px 14px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                              >ดูรายละเอียด</button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ) : (
-            /* ─── Grouped Table ─── */
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ ...thS, width: '28%' }}>ระบบงาน / รายการ</th>
-                    <th style={{ ...thS, width: '40%' }}>ข้อมูลพื้นฐาน</th>
-                    <th style={{ ...thS, width: '22%' }}>สถานะ</th>
-                    <th style={{ ...thS, width: 60, textAlign: 'center' }}>ลบ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedSystems.map(sysName => {
-                    const items = groupedEntries[sysName] || []
-                    return items.map((entry, idx) => (
-                      <tr key={entry.id} style={{ background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
-                        {idx === 0 && (
-                          <td rowSpan={items.length} style={{
-                            ...tdS, fontWeight: 700, color: '#1e3a5f', fontSize: 13,
-                            background: '#f0f7ff', borderRight: '2px solid #bfdbfe',
-                            verticalAlign: 'middle',
-                          }}>
-                            <span style={{ display: 'block', padding: '4px 0' }}>{sysName}</span>
-                            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>{items.length} รายการ</span>
-                          </td>
-                        )}
-                        <td style={tdS}>{entry.itemName}</td>
-                        <td style={tdS}>
-                          <select
-                            value={entry.status}
-                            onChange={e => updateEntryStatus(entry.id, e.target.value)}
-                            style={{
-                              padding: '5px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                              border: `1.5px solid ${statusMeta(entry.status).color}44`,
-                              background: statusMeta(entry.status).bg,
-                              color: statusMeta(entry.status).color, cursor: 'pointer',
-                              outline: 'none',
-                            }}
-                          >
-                            {STATUS_OPTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ ...tdS, textAlign: 'center' }}>
-                          <button
-                            onClick={() => deleteEntry(entry.id, entry.itemName)}
-                            style={{ padding: '3px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
-                          >ลบ</button>
-                        </td>
-                      </tr>
-                    ))
-                  })}
-                </tbody>
-              </table>
-            </div>
+            /* ── Detail View ── */
+            (() => {
+              const hospObj = hospitals.find(h => String(h.id) === String(checkHosp))
+              const total = entries.length
+              const done = entries.filter(e => e.status === 'done').length
+              const inprogress = entries.filter(e => e.status === 'inprogress').length
+              const waiting = entries.filter(e => e.status === 'waiting').length
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0
+              return (
+                <div>
+                  {/* Header bar */}
+                  <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '14px 20px', marginBottom: 16, display: 'flex', gap: 0, alignItems: 'stretch' }}>
+                    <div style={{ paddingRight: 16, borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center' }}>
+                      <button
+                        onClick={() => { setClView('list'); loadHospSummaries() }}
+                        style={{ padding: '7px 16px', background: '#f8fafc', color: '#374151', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                      >← กลับ</button>
+                    </div>
+                    <div style={{ flex: 2, padding: '0 16px', borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>โรงพยาบาล</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1e3a5f' }}>{hospObj?.name || `รพ. #${checkHosp}`}</div>
+                    </div>
+                    <div style={{ flex: 1, padding: '0 16px', borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>รายการทั้งหมด</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#1e3a5f' }}>{total}</div>
+                    </div>
+                    <div style={{ flex: 1, padding: '0 16px', borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#d97706', marginBottom: 2 }}>รอข้อมูล</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#d97706' }}>{waiting}</div>
+                    </div>
+                    <div style={{ flex: 1, padding: '0 16px', borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#0891b2', marginBottom: 2 }}>กำลังดำเนินการ</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#0891b2' }}>{inprogress}</div>
+                    </div>
+                    <div style={{ flex: 1, padding: '0 16px', borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 2 }}>ดำเนินการแล้ว</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#16a34a' }}>{done}</div>
+                    </div>
+                    <div style={{ flex: 1, paddingLeft: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>ความคืบหน้า</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: pct === 100 ? '#16a34a' : '#0891b2' }}>{pct}%</div>
+                    </div>
+                  </div>
+
+                  {/* Detail Toolbar */}
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+                    <button onClick={openImport} style={{
+                      padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
+                      borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                    }}>+ นำเข้า / เพิ่ม Check List</button>
+                  </div>
+
+                  {loadingEntries ? (
+                    <div style={{ textAlign: 'center', padding: 60, color: '#94a3b8' }}>กำลังโหลด...</div>
+                  ) : entries.length === 0 ? (
+                    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+                      <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+                      <div style={{ fontSize: 16, fontWeight: 600 }}>ยังไม่มี check list</div>
+                      <div style={{ fontSize: 13, marginTop: 4 }}>กด "+ นำเข้า / เพิ่ม Check List" เพื่อเริ่มต้น</div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Overview */}
+                      <div style={{ marginBottom: 20 }}>
+                        <div style={{
+                          background: 'linear-gradient(135deg, #1e3a5f 0%, #0891b2 100%)',
+                          borderRadius: 16, padding: '24px 28px', marginBottom: 14,
+                          display: 'flex', gap: 28, alignItems: 'center', flexWrap: 'wrap',
+                        }}>
+                          <div style={{ textAlign: 'center', minWidth: 90 }}>
+                            <div style={{ fontSize: 56, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
+                              {pct}<span style={{ fontSize: 26 }}>%</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>ภาพรวม</div>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 200 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 10 }}>ภาพรวมการดำเนินการข้อมูลพื้นฐาน</div>
+                            <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 8, height: 12, overflow: 'hidden', marginBottom: 12 }}>
+                              <div style={{ width: `${pct}%`, background: pct === 100 ? '#22c55e' : '#38bdf8', height: '100%', borderRadius: 8, transition: 'width 0.5s' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#22c55e', flexShrink: 0 }} />
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}>ดำเนินการแล้ว <strong>{done}</strong></span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#38bdf8', flexShrink: 0 }} />
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}>กำลังดำเนินการ <strong>{inprogress}</strong></span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: 2, background: 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}>รอข้อมูล <strong>{waiting}</strong></span>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: '12px 20px' }}>
+                            <div style={{ fontSize: 34, fontWeight: 800, color: '#fff' }}>{total}</div>
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>รายการทั้งหมด</div>
+                          </div>
+                        </div>
+
+                        {/* Per-system mini cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+                          {sortedSystems.map(sysName => {
+                            const sItems = groupedEntries[sysName] || []
+                            const sDone = sItems.filter(e => e.status === 'done').length
+                            const sInprog = sItems.filter(e => e.status === 'inprogress').length
+                            const sPct = sItems.length > 0 ? Math.round((sDone / sItems.length) * 100) : 0
+                            return (
+                              <div key={sysName} style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#1e3a5f', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sysName}>{sysName}</div>
+                                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                                  {sDone}/{sItems.length} รายการ{sInprog > 0 ? ` · กำลังทำ ${sInprog}` : ''}
+                                </div>
+                                <div style={{ background: '#e2e8f0', borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 4 }}>
+                                  <div style={{ width: `${sPct}%`, background: sPct === 100 ? '#16a34a' : '#0891b2', height: '100%', borderRadius: 4, transition: 'width 0.4s' }} />
+                                </div>
+                                <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: sPct === 100 ? '#16a34a' : sPct > 0 ? '#0891b2' : '#94a3b8' }}>{sPct}%</div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Checklist Table */}
+                      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                        <div style={{ padding: '14px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#1e3a5f' }}>รายการ Check List</div>
+                          <div style={{ fontSize: 13, color: '#64748b' }}>{total} รายการ</div>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ ...thS, width: '24%' }}>ระบบงาน</th>
+                              <th style={{ ...thS, width: '38%' }}>ข้อมูลพื้นฐาน</th>
+                              <th style={{ ...thS, width: '22%' }}>สถานะ</th>
+                              <th style={{ ...thS, width: 130, textAlign: 'center' }}>จัดการ</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedSystems.map(sysName => {
+                              const items = groupedEntries[sysName] || []
+                              return items.map((entry, idx) => (
+                                <tr key={entry.id} style={{ background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
+                                  {idx === 0 && (
+                                    <td rowSpan={items.length} style={{
+                                      ...tdS, fontWeight: 700, color: '#1e3a5f', fontSize: 13,
+                                      background: '#f0f7ff', borderRight: '2px solid #bfdbfe',
+                                      verticalAlign: 'middle',
+                                    }}>
+                                      <span style={{ display: 'block', padding: '4px 0' }}>{sysName}</span>
+                                      <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>{items.length} รายการ</span>
+                                    </td>
+                                  )}
+                                  <td style={tdS}>{entry.itemName}</td>
+                                  <td style={tdS}>
+                                    <select
+                                      value={entry.status}
+                                      onChange={e => updateEntryStatus(entry.id, e.target.value)}
+                                      style={{
+                                        padding: '5px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                                        border: `1.5px solid ${statusMeta(entry.status).color}44`,
+                                        background: statusMeta(entry.status).bg,
+                                        color: statusMeta(entry.status).color, cursor: 'pointer',
+                                        outline: 'none',
+                                      }}
+                                    >
+                                      {STATUS_OPTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                    </select>
+                                  </td>
+                                  <td style={{ ...tdS, textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                                      <button
+                                        onClick={() => openEditModal(entry)}
+                                        style={{ padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                                      >แก้ไข</button>
+                                      <button
+                                        onClick={() => deleteEntry(entry.id, entry.itemName)}
+                                        style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                                      >ลบ</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })()
           )}
         </div>
       )}
@@ -411,11 +671,18 @@ export default function ChecklistBasic() {
 
             {/* Hospital select */}
             <div style={{ padding: '16px 28px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>เลือกโรงพยาบาล *</label>
-              <SearchableSelect value={String(importHosp || '')} onChange={handleImportHospChange}
-                options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
-                placeholder="-- เลือกโรงพยาบาล --" style={{ flex: 1, minWidth: 200 }}
-                inputStyle={{ border: '1.5px solid #3b82f6' }} />
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>เลือกโครงการ *</label>
+              <select value={String(importHosp || '')} onChange={e => handleImportHospChange(e.target.value)}
+                style={{ flex: 1, minWidth: 200, padding: '9px 12px', border: `1.5px solid ${importHosp ? '#0891b2' : '#e2e8f0'}`, borderRadius: 8, fontSize: 13, background: '#fff', boxSizing: 'border-box' }}>
+                <option value="">-- เลือกโครงการ --</option>
+                {projectPlans.map(p => {
+                  const h = hospitals.find(hh => String(hh.id) === String(p.hospitalId))
+                  const s = toISO(p.startDate || p.onlineStart)
+                  const e = toISO(p.endDate   || p.onlineEnd)
+                  const range = s ? ` (${fmtShort(s)}–${fmtShort(e)})` : ''
+                  return <option key={p.id} value={String(p.hospitalId)}>{h ? `[${h.name}] ` : ''}{p.projectName}{range}</option>
+                })}
+              </select>
               {importHosp && (
                 <button type="button" onClick={() => handleImportHospChange(importHosp)} style={{ padding: '8px 14px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   🔄 โหลดรายการ
@@ -484,6 +751,57 @@ export default function ChecklistBasic() {
               }}>
                 {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ Edit Entry Modal ════ */}
+      {showEditModal && editingEntry && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 450, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 24px 80px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding: '20px 24px', background: 'linear-gradient(135deg, #1e3a5f, #0891b2)', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ color: '#fff', fontSize: 17, marginBottom: 2 }}>✏️ แก้ไข Check List</h3>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>อัพเดทสถานะและบันทึกหมายเหตุ</div>
+              </div>
+              <button onClick={() => { setShowEditModal(false); setEditingEntry(null) }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 18, cursor: 'pointer', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+            <div style={{ padding: 24 }}>
+              <div style={{ marginBottom: 16, padding: 14, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>ระบบงาน</div>
+                <span style={{ padding: '3px 12px', borderRadius: 20, background: '#eff6ff', color: '#1d4ed8', fontSize: 13, fontWeight: 600 }}>{editingEntry.systemName}</span>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 10, marginBottom: 4 }}>ข้อมูลพื้นฐาน</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b' }}>{editingEntry.itemName}</div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>สถานะการดำเนินการ</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {STATUS_OPTS.map(s => (
+                    <button key={s.value} onClick={() => setEditingEntry(prev => ({ ...prev, status: s.value }))} style={{
+                      flex: 1, padding: '10px 6px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      border: editingEntry.status === s.value ? `2px solid ${s.color}` : '1.5px solid #e2e8f0',
+                      background: editingEntry.status === s.value ? s.bg : '#fff',
+                      color: editingEntry.status === s.value ? s.color : '#94a3b8',
+                      transition: 'all 0.15s',
+                    }}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>บันทึกหมายเหตุ</label>
+                <textarea
+                  value={editingEntry.note || ''}
+                  onChange={e => setEditingEntry(prev => ({ ...prev, note: e.target.value }))}
+                  rows={3}
+                  placeholder="บันทึกรายละเอียดเพิ่มเติม..."
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => { setShowEditModal(false); setEditingEntry(null) }} style={{ flex: 1, padding: 11, background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}>ยกเลิก</button>
+                <button onClick={handleEditSave} style={{ flex: 2, padding: 11, background: 'linear-gradient(135deg, #1e3a5f, #0891b2)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>💾 บันทึกการแก้ไข</button>
+              </div>
             </div>
           </div>
         </div>
