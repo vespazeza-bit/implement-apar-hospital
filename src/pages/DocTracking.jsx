@@ -22,13 +22,6 @@ const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.
 const toISO    = (d) => d ? String(d).slice(0, 10) : ''
 const fmtBE    = (iso) => { if (!iso) return ''; const [y,m,d] = iso.split('-'); return `${parseInt(d)} ${THAI_MONTHS[parseInt(m)-1]} ${parseInt(y)+543}` }
 const fmtShort = (iso) => { if (!iso) return ''; const [,m,d] = iso.split('-'); return `${parseInt(d)} ${THAI_MONTHS[parseInt(m)-1]}` }
-const localISO = (d) => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}` }
-const getDatesInRange = (start, end) => {
-  if (!start || !end) return []
-  const dates = [], s = new Date(start), e = new Date(end)
-  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) dates.push(localISO(d))
-  return dates
-}
 
 const ROLE_RANK = [
   ['ผู้จัดการ','manager','pm','director'],
@@ -55,18 +48,33 @@ const sortMembers = (team, teamLeader, siteOwner) =>
 
 // ── Add Modal ─────────────────────────────────────────────────────────────────
 function AddModal({ plans, hospitals, onSave, onClose }) {
-  const [selPlanId, setSelPlanId] = useState('')
-  const [saving, setSaving]       = useState(false)
-  const [error, setError]         = useState('')
-  const [holidays, setHolidays]   = useState(new Set())
+  const [selPlanId, setSelPlanId]             = useState('')
+  const [saving, setSaving]                   = useState(false)
+  const [error, setError]                     = useState('')
+  const [holidays, setHolidays]               = useState(new Set())
+  const [standbyDates, setStandbyDates]       = useState([])
+  const [standbyLoading, setStandbyLoading]   = useState(false)
 
   const activePlan = plans?.find(p => String(p.id) === selPlanId) ?? null
   const hosp       = activePlan ? hospitals.find(h => String(h.id) === String(activePlan.hospitalId)) : null
   const planStart  = activePlan ? toISO(activePlan.startDate || activePlan.onlineStart) : ''
   const planEnd    = activePlan ? toISO(activePlan.endDate   || activePlan.onlineEnd)   : ''
-  const allDates   = useMemo(() => getDatesInRange(planStart, planEnd), [planStart, planEnd])
   const members    = useMemo(() => activePlan?.team ? sortMembers(activePlan.team, activePlan.teamLeader, activePlan.siteOwner) : [], [activePlan])
 
+  // ── Fetch StandBy dates for selected plan ───────────────────────────────────
+  useEffect(() => {
+    if (!selPlanId) { setStandbyDates([]); return }
+    let cancelled = false
+    setStandbyLoading(true)
+    fetch(`${API}/standby/dates?planId=${selPlanId}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setStandbyDates(Array.isArray(d) ? d : []) })
+      .catch(() => { if (!cancelled) setStandbyDates([]) })
+      .finally(() => { if (!cancelled) setStandbyLoading(false) })
+    return () => { cancelled = true }
+  }, [selPlanId])
+
+  // ── Fetch holidays for year range ────────────────────────────────────────────
   useEffect(() => {
     if (!planStart || !planEnd) { setHolidays(new Set()); return }
     const y1 = parseInt(planStart.slice(0,4)), y2 = parseInt(planEnd.slice(0,4))
@@ -77,13 +85,13 @@ function AddModal({ plans, hospitals, onSave, onClose }) {
   }, [planStart, planEnd])
 
   const handleCreate = async () => {
-    if (!activePlan)           return setError('กรุณาเลือกโครงการ')
-    if (!planStart || !planEnd) return setError('โครงการนี้ยังไม่มีช่วงวันที่')
+    if (!activePlan)            return setError('กรุณาเลือกโครงการ')
+    if (!standbyDates.length)   return setError('โครงการนี้ยังไม่มีตาราง Stand By กรุณาสร้างตาราง Stand By ก่อน')
     if (!members.length)        return setError('โครงการนี้ยังไม่มีทีมงาน')
     setError(''); setSaving(true)
     try {
       const records = members.flatMap(m =>
-        allDates.map(d => ({
+        standbyDates.map(d => ({
           planId: Number(activePlan.id), memberId: m.memberId, memberName: m.name,
           trackDate: d, status: holidays.has(d) ? 'holiday' : 'not_sent',
         }))
@@ -97,6 +105,9 @@ function AddModal({ plans, hospitals, onSave, onClose }) {
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
   }
+
+  const dateStart = standbyDates.length > 0 ? standbyDates[0] : ''
+  const dateEnd   = standbyDates.length > 0 ? standbyDates[standbyDates.length - 1] : ''
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
@@ -135,9 +146,14 @@ function AddModal({ plans, hospitals, onSave, onClose }) {
             <div style={{ background:'#f8fafc', borderRadius:10, padding:14, border:'1px solid #e2e8f0' }}>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
                 {[
-                  { label:'ช่วงเวลา',    val: planStart ? `${fmtShort(planStart)} – ${fmtShort(planEnd)}` : '—', color:'#1e293b', size:13 },
-                  { label:'จำนวนวัน',   val: allDates.length, color:'#0891b2', size:20 },
-                  { label:'ทีมงาน',      val: `${members.length} คน`,  color:'#7c3aed', size:18 },
+                  { label:'ช่วงเวลา (Stand By)',
+                    val: standbyLoading ? '...' : dateStart ? `${fmtShort(dateStart)} – ${fmtShort(dateEnd)}` : planStart ? `${fmtShort(planStart)} – ${fmtShort(planEnd)}` : '—',
+                    color:'#1e293b', size:13 },
+                  { label:'วันจาก Stand By',
+                    val: standbyLoading ? '⏳' : standbyDates.length,
+                    color: standbyDates.length > 0 ? '#0891b2' : '#dc2626', size:20 },
+                  { label:'ทีมงาน',
+                    val: `${members.length} คน`, color:'#7c3aed', size:18 },
                 ].map(item => (
                   <div key={item.label} style={{ textAlign:'center' }}>
                     <div style={{ fontSize:11, color:'#94a3b8', marginBottom:2 }}>{item.label}</div>
@@ -148,12 +164,19 @@ function AddModal({ plans, hospitals, onSave, onClose }) {
             </div>
           )}
 
+          {activePlan && !standbyLoading && standbyDates.length === 0 && (
+            <div style={{ padding:'12px 14px', background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, fontSize:13, color:'#92400e' }}>
+              ⚠️ โครงการนี้ยังไม่มีตาราง Stand By<br/>
+              <span style={{ fontSize:12 }}>กรุณาสร้างตาราง Stand By ก่อน เพื่อให้วันทำงานในการติดตามเอกสารตรงกัน</span>
+            </div>
+          )}
+
           {error && <div style={{ padding:'10px 14px', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, fontSize:13, color:'#dc2626' }}>⚠️ {error}</div>}
 
           <div style={{ display:'flex', gap:10 }}>
             <button onClick={onClose} style={{ flex:1, padding:11, background:'#f1f5f9', color:'#374151', border:'none', borderRadius:8, fontSize:14, cursor:'pointer' }}>ยกเลิก</button>
-            <button onClick={handleCreate} disabled={saving || !selPlanId}
-              style={{ flex:2, padding:11, background: saving||!selPlanId ? '#94a3b8' : 'linear-gradient(135deg,#1e3a5f,#16a34a)', color:'#fff', border:'none', borderRadius:8, fontSize:14, fontWeight:700, cursor: saving||!selPlanId ? 'default':'pointer' }}>
+            <button onClick={handleCreate} disabled={saving || !selPlanId || standbyDates.length === 0}
+              style={{ flex:2, padding:11, background: (saving||!selPlanId||standbyDates.length===0) ? '#94a3b8' : 'linear-gradient(135deg,#1e3a5f,#16a34a)', color:'#fff', border:'none', borderRadius:8, fontSize:14, fontWeight:700, cursor: (saving||!selPlanId||standbyDates.length===0) ? 'default':'pointer' }}>
               {saving ? '⏳ กำลังสร้าง...' : '✅ สร้างการติดตาม'}
             </button>
           </div>
@@ -179,6 +202,8 @@ export default function DocTracking() {
   const [loading, setLoading]       = useState(false)
   const [saving, setSaving]         = useState(false)
   const [holidays, setHolidays]     = useState(new Set())
+  const [standbyDates, setStandbyDates]     = useState([])
+  const [standbyLoading, setStandbyLoading] = useState(false)
   const [filterDateStart, setFilterDateStart] = useState('')
   const [filterDateEnd, setFilterDateEnd]     = useState('')
   const [filterMember, setFilterMember]       = useState('')
@@ -241,8 +266,20 @@ export default function DocTracking() {
   const selPlan     = useMemo(() => projectPlans.find(p => String(p.id) === String(selPlanId)), [projectPlans, selPlanId])
   const planStart   = selPlan ? toISO(selPlan.startDate || selPlan.onlineStart) : ''
   const planEnd     = selPlan ? toISO(selPlan.endDate   || selPlan.onlineEnd)   : ''
-  const allDates    = useMemo(() => getDatesInRange(planStart, planEnd), [planStart, planEnd])
   const planMembers = useMemo(() => selPlan?.team ? sortMembers(selPlan.team, selPlan.teamLeader, selPlan.siteOwner) : [], [selPlan])
+
+  // ── Load StandBy dates for selected plan ────────────────────────────────────
+  useEffect(() => {
+    if (!selPlanId) { setStandbyDates([]); return }
+    let cancelled = false
+    setStandbyLoading(true)
+    fetch(`${API}/standby/dates?planId=${selPlanId}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setStandbyDates(Array.isArray(d) ? d : []) })
+      .catch(() => { if (!cancelled) setStandbyDates([]) })
+      .finally(() => { if (!cancelled) setStandbyLoading(false) })
+    return () => { cancelled = true }
+  }, [selPlanId])
 
   // ── Load holidays ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -256,10 +293,10 @@ export default function DocTracking() {
 
   // ── Load tracking records ───────────────────────────────────────────────────
   useEffect(() => {
-    if (!selPlanId || !planStart || !planEnd) { setRecords({}); return }
+    if (!selPlanId) { setRecords({}); return }
     let cancelled = false
     setLoading(true)
-    fetch(`${API}/doc-tracking?planId=${selPlanId}&startDate=${planStart}&endDate=${planEnd}`)
+    fetch(`${API}/doc-tracking?planId=${selPlanId}`)
       .then(r => r.json())
       .then(data => {
         if (cancelled) return
@@ -270,15 +307,15 @@ export default function DocTracking() {
       .catch(() => { if (!cancelled) setRecords({}) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selPlanId, planStart, planEnd])
+  }, [selPlanId])
 
   // ── Date/member filters ─────────────────────────────────────────────────────
   const visibleDates = useMemo(() => {
-    let dates = allDates
+    let dates = standbyDates
     if (filterDateStart) dates = dates.filter(d => d >= filterDateStart)
     if (filterDateEnd)   dates = dates.filter(d => d <= filterDateEnd)
     return dates
-  }, [allDates, filterDateStart, filterDateEnd])
+  }, [standbyDates, filterDateStart, filterDateEnd])
 
   const visibleMembers = useMemo(() => {
     if (!filterMember) return planMembers
@@ -313,8 +350,8 @@ export default function DocTracking() {
 
   // ── Detail summary ──────────────────────────────────────────────────────────
   const detailSummary = useMemo(() => {
-    if (!planMembers.length || !allDates.length) return null
-    const nonHolidays = allDates.filter(d => !holidays.has(d))
+    if (!planMembers.length || !standbyDates.length) return null
+    const nonHolidays = standbyDates.filter(d => !holidays.has(d))
     const sentCnt = planMembers.reduce((acc, m) => acc + nonHolidays.filter(d => records[`${d}_${m.name}`] === 'sent').length, 0)
     const memberPending = planMembers.map(m => ({
       name: m.name,
@@ -324,7 +361,7 @@ export default function DocTracking() {
       }).length,
     })).filter(x => x.pending > 0).sort((a, b) => b.pending - a.pending)
     return { sentCnt, memberPending }
-  }, [planMembers, allDates, records, holidays])
+  }, [planMembers, standbyDates, records, holidays])
 
   // ── Delete plan tracking ────────────────────────────────────────────────────
   const deletePlanTracking = async (p) => {
@@ -529,6 +566,7 @@ export default function DocTracking() {
                 </div>
               </div>
               {[
+                { label:'Stand By',  val: standbyLoading ? '⏳' : `${standbyDates.length} วัน`, color:'#0891b2' },
                 { label:'ส่งแล้ว',  val: sentCnt, color: STATUS.sent.color },
                 { label:'ค้างส่ง',  val: pendCnt, color: STATUS.pending.color },
                 { label:'วันหยุด',  val: holCnt,  color: STATUS.holiday.color },
@@ -536,7 +574,7 @@ export default function DocTracking() {
               ].map(item => (
                 <div key={item.label} style={{ flex:1, padding:'0 14px', borderRight:'1px solid #f1f5f9', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center' }}>
                   <div style={{ fontSize:11, color:item.color, marginBottom:2 }}>{item.label}</div>
-                  <div style={{ fontSize:20, fontWeight:800, color:item.color }}>{item.val}</div>
+                  <div style={{ fontSize:18, fontWeight:800, color:item.color }}>{item.val}</div>
                 </div>
               ))}
               <div style={{ padding:'14px 16px', display:'flex', alignItems:'center', gap:8 }}>
@@ -547,6 +585,15 @@ export default function DocTracking() {
                 {saving && <span style={{ fontSize:11, color:'#94a3b8' }}>⏳</span>}
               </div>
             </div>
+
+            {/* No StandBy warning */}
+            {!standbyLoading && standbyDates.length === 0 && (
+              <div style={{ background:'#fef3c7', border:'1px solid #fde68a', borderRadius:12, padding:'24px 20px', marginBottom:16, textAlign:'center', color:'#92400e' }}>
+                <div style={{ fontSize:28, marginBottom:8 }}>⚠️</div>
+                <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>ยังไม่มีตาราง Stand By สำหรับโครงการนี้</div>
+                <div style={{ fontSize:12 }}>กรุณาสร้างตาราง Stand By ก่อน เพื่อให้วันทำงานในการติดตามเอกสารตรงกัน</div>
+              </div>
+            )}
 
             {/* Pending members summary */}
             {detailSummary?.memberPending?.length > 0 && (
@@ -586,14 +633,14 @@ export default function DocTracking() {
                   style={{ width:'100%', padding:'7px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13, boxSizing:'border-box' }} />
               </div>
               <span style={{ fontSize:12, color:'#94a3b8', whiteSpace:'nowrap' }}>
-                {visibleDates.length} วัน / {visibleMembers.length} คน
+                {visibleDates.length} วัน (Stand By) / {visibleMembers.length} คน
               </span>
             </div>
 
             {/* Grid */}
-            {loading ? (
+            {loading || standbyLoading ? (
               <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e2e8f0', padding:'60px 20px', textAlign:'center', color:'#94a3b8' }}>⏳ กำลังโหลด...</div>
-            ) : (
+            ) : standbyDates.length === 0 ? null : (
               <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e2e8f0', overflow:'hidden' }}>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>

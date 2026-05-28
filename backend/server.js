@@ -1586,6 +1586,19 @@ app.get('/api/standby/conflicts', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// Get distinct working dates for a plan — used by DocTracking to sync with StandBy calendar
+app.get('/api/standby/dates', async (req, res) => {
+  try {
+    const { planId } = req.query
+    if (!planId) return res.status(400).json({ error: 'planId required' })
+    const [rows] = await pool.query(
+      'SELECT DISTINCT schedule_date FROM standby_schedules WHERE plan_id=? ORDER BY schedule_date',
+      [planId]
+    )
+    res.json(rows.map(r => String(r.schedule_date).slice(0, 10)))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // DOCUMENT TRACKING
 // ═══════════════════════════════════════════════════════════════════════════════
