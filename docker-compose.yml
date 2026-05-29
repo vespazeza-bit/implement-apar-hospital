@@ -1,23 +1,23 @@
 version: "3.9"
 
 services:
-  # ── MySQL Database ──────────────────────────────────────────────────────────
+  # ── MariaDB Database ─────────────────────────────────────────────────────────
   db:
-    image: mysql:8.0
+    image: mariadb:11
     container_name: apar_db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root1234
-      MYSQL_DATABASE: acc_system_setup
-      MYSQL_USER: vespazeza
-      MYSQL_PASSWORD: 64120482
+      MARIADB_ROOT_PASSWORD: root1234
+      MARIADB_DATABASE: acc_system_setup
+      MARIADB_USER: vespazeza
+      MARIADB_PASSWORD: 64120482
     volumes:
       - db_data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     ports:
       - "3306:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 5

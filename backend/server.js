@@ -1150,11 +1150,21 @@ async function runMigrations() {
     console.error('❌ Migration error (holiday_rules):', e.message)
   }
 
-  // Alter existing holiday_rules table to add new columns / update ENUM
+  // Alter existing holiday_rules table — use INFORMATION_SCHEMA (compatible with MySQL 8 + MariaDB)
   try {
-    await pool.query(`ALTER TABLE holiday_rules ADD COLUMN IF NOT EXISTS fix_end_month TINYINT NULL COMMENT '1-12 (end of date range)' AFTER fix_day`)
-    await pool.query(`ALTER TABLE holiday_rules ADD COLUMN IF NOT EXISTS fix_end_day TINYINT NULL COMMENT '1-31 (end of date range)' AFTER fix_end_month`)
-    await pool.query(`ALTER TABLE holiday_rules MODIFY COLUMN rule_type ENUM('weekend','weekday','fixed_date','nth_weekday','fixed_date_range') NOT NULL DEFAULT 'fixed_date'`)
+    const [cols] = await pool.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='holiday_rules'`
+    )
+    const colNames = cols.map(c => c.COLUMN_NAME)
+    if (!colNames.includes('fix_end_month'))
+      await pool.query(`ALTER TABLE holiday_rules ADD COLUMN fix_end_month TINYINT NULL COMMENT '1-12 (end of date range)' AFTER fix_day`)
+    if (!colNames.includes('fix_end_day'))
+      await pool.query(`ALTER TABLE holiday_rules ADD COLUMN fix_end_day TINYINT NULL COMMENT '1-31 (end of date range)' AFTER fix_end_month`)
+    const [[enumRow]] = await pool.query(
+      `SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='holiday_rules' AND COLUMN_NAME='rule_type'`
+    )
+    if (enumRow && !enumRow.COLUMN_TYPE.includes('fixed_date_range'))
+      await pool.query(`ALTER TABLE holiday_rules MODIFY COLUMN rule_type ENUM('weekend','weekday','fixed_date','nth_weekday','fixed_date_range') NOT NULL DEFAULT 'fixed_date'`)
   } catch (e) {
     console.error('❌ Migration alter holiday_rules:', e.message)
   }
