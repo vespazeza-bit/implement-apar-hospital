@@ -1759,7 +1759,7 @@ app.get('/api/hospcode/search', async (req, res) => {
     const like = `%${q.trim()}%`
     const codeLike = `${q.trim()}%`
     const [rows] = await pool.query(
-      `SELECT hospcode, name, province_name, bed_count, hosptype
+      `SELECT hospcode, name, province_name, bed_count, hosptype, addrpart
        FROM hospcode
        WHERE (hospcode LIKE ? OR name LIKE ?)
        ORDER BY CASE WHEN hospcode LIKE ? THEN 0 ELSE 1 END, hospcode

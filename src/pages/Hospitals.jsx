@@ -283,7 +283,13 @@ export default function Hospitals() {
                       <HospcodeSearch
                         value={form.code}
                         onChange={v => setForm(p => ({ ...p, code: v }))}
-                        onSelect={item => setForm(p => ({ ...p, code: item.hospcode, name: item.name || p.name, province: item.province_name ? item.province_name.replace(/^จ\./, '') : p.province }))}
+                        onSelect={item => setForm(p => ({
+                          ...p,
+                          code: item.hospcode,
+                          name: item.name || p.name,
+                          province: item.province_name ? item.province_name.replace(/^จ\./, '') : p.province,
+                          address: item.addrpart || p.address,
+                        }))}
                       />
                       {form.code && <div style={{ fontSize: 11, color: '#0891b2', marginTop: 3 }}>💡 พิมพ์รหัสหรือชื่อเพื่อค้นหาจาก hospcode</div>}
                     </div>
