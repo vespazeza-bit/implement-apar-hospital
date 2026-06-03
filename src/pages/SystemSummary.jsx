@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { loadIssueTypes } from './TrainingSummary'
 import SearchableSelect from '../components/SearchableSelect'
+import * as XLSX from 'xlsx'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -20,7 +21,7 @@ const STATUS_OPT = [
 
 const EMPTY_FORM = {
   hospKey: '', hospitalId: '', reportDate: '', resolvedDate: '', systemName: '', category: '', description: '',
-  priority: 'medium', status: 'open', resolution: '', reportedBy: '',
+  priority: 'medium', status: 'open', resolution: '', reportedBy: '', receivedBy: '', resolvedBy: '',
 }
 
 const LAST_HOSP_KEY = 'lastSystemIssueHosp'
@@ -152,6 +153,39 @@ export default function SystemSummary() {
 
   const counts = STATUS_OPT.reduce((acc, s) => ({ ...acc, [s.value]: systemIssues.filter(i => i.status === s.value).length }), {})
 
+  const exportToExcel = () => {
+    const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+    const fmtBE = (d) => {
+      if (!d) return ''
+      const s = String(d).slice(0, 10)
+      if (!s.includes('-')) return ''
+      const [y, m, day] = s.split('-')
+      return `${parseInt(day)} ${THAI_MONTHS[parseInt(m)-1]} ${parseInt(y)+543}`
+    }
+    const title = 'ตารางสรุปปัญหาการขึ้นระบบ AP/AR'
+    const headers = ['ลำดับ','วันที่รับปัญหา','หน่วยงาน','ปัญหา','กลุ่มปัญหา','สถานะ','วิธีการแก้ไข','ผู้แจ้งปัญหา','ผู้รับปัญหา','ผู้แก้ไข','วันที่แก้ไขปัญหา']
+    const rows = filtered.map((issue, idx) => [
+      idx + 1,
+      fmtBE(issue.reportDate),
+      getHospName(issue.hospitalId),
+      issue.description || '',
+      issue.category || '',
+      STATUS_OPT.find(s => s.value === issue.status)?.label || issue.status || '',
+      issue.resolution || '',
+      issue.reportedBy || '',
+      issue.receivedBy || '',
+      issue.resolvedBy || '',
+      fmtBE(issue.resolvedDate),
+    ])
+    const wsData = [[title], [], headers, ...rows]
+    const ws = XLSX.utils.aoa_to_sheet(wsData)
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }]
+    ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 24 }, { wch: 50 }, { wch: 16 }, { wch: 14 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 16 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'สรุปปัญหา')
+    XLSX.writeFile(wb, `system_issues_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -179,6 +213,10 @@ export default function SystemSummary() {
           padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
           borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
         }}>+ รายงานปัญหา</button>
+        <button onClick={exportToExcel} disabled={filtered.length === 0} style={{
+          padding: '9px 18px', background: filtered.length === 0 ? '#e2e8f0' : '#16a34a', color: filtered.length === 0 ? '#94a3b8' : '#fff',
+          border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: filtered.length === 0 ? 'default' : 'pointer', whiteSpace: 'nowrap',
+        }}>📥 Export Excel</button>
         <SearchableSelect value={filterHosp} onChange={setFilterHosp}
           options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
           allLabel="ทุก รพ." style={{ minWidth: 200 }} />
@@ -237,7 +275,13 @@ export default function SystemSummary() {
                     </div>
                     <div style={{ fontWeight: 700, color: '#1e3a5f', fontSize: 14, marginBottom: 6 }}>🏥 {getHospName(issue.hospitalId)}</div>
                     <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{issue.description}</div>
-                    {issue.reportedBy && <div style={{ fontSize: 12, color: '#94a3b8' }}>👤 รายงานโดย: {issue.reportedBy}</div>}
+                    {(issue.reportedBy || issue.receivedBy || issue.resolvedBy) && (
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                        {issue.reportedBy && <span style={{ fontSize: 12, color: '#94a3b8' }}>👤 แจ้ง: {issue.reportedBy}</span>}
+                        {issue.receivedBy && <span style={{ fontSize: 12, color: '#94a3b8' }}>📥 รับ: {issue.receivedBy}</span>}
+                        {issue.resolvedBy && <span style={{ fontSize: 12, color: '#94a3b8' }}>🔧 แก้ไข: {issue.resolvedBy}</span>}
+                      </div>
+                    )}
                     {issue.resolution && (
                       <div style={{ fontSize: 13, color: '#16a34a', background: '#f0fdf4', padding: '8px 12px', borderRadius: 8, marginTop: 8 }}>
                         ✅ วิธีแก้ไข: {issue.resolution}
@@ -270,12 +314,14 @@ export default function SystemSummary() {
                   { label: 'โรงพยาบาล / โครงการ *', key: 'hospKey', type: 'hospSearch' },
                   { label: 'วันที่พบปัญหา *', key: 'reportDate', type: 'date' },
                   { label: 'วันที่แก้ไข', key: 'resolvedDate', type: 'date' },
-                  { label: 'ผู้รายงาน', key: 'reportedBy', type: 'select', options: (() => {
+                  { label: 'ผู้แจ้งปัญหา', key: 'reportedBy', type: 'select', options: (() => {
                     const opts = teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') }))
                     const me = getCurrentUserName()
                     if (me && !opts.some(o => o.value === me)) opts.unshift({ value: me, label: `${me} (ฉัน)` })
                     return opts
                   })(), nullable: true },
+                  { label: 'ผู้รับปัญหา', key: 'receivedBy', type: 'select', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
+                  { label: 'ผู้แก้ไข', key: 'resolvedBy', type: 'select', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
                   { label: 'ระบบงาน *', key: 'systemName', type: 'select', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
                   { label: 'ประเภทปัญหา *', key: 'category', type: 'select', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
                   { label: 'ความสำคัญ', key: 'priority', type: 'select', options: PRIORITY.map(p => ({ value: p.value, label: p.label })) },

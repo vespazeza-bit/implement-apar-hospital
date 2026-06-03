@@ -299,6 +299,7 @@ app.get('/api/system-issues', async (req, res) => {
       category: x.category || '', description: x.description || '',
       priority: x.priority, status: x.status,
       resolution: x.resolution || '', reportedBy: x.reported_by || '',
+      receivedBy: x.received_by || '', resolvedBy: x.resolved_by || '',
       systemName: x.system_name || '',
     })))
   } catch (e) { res.status(500).json({ error: e.message }) }
@@ -308,8 +309,8 @@ app.post('/api/system-issues', async (req, res) => {
   try {
     const d = req.body
     const [r] = await pool.query(
-      'INSERT INTO system_issues (hospital_id,report_date,resolved_date,category,description,priority,status,resolution,reported_by,system_name) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [nn(d.hospitalId), nd(d.reportDate), nd(d.resolvedDate), d.category, d.description, d.priority, d.status, d.resolution, d.reportedBy, d.systemName || ''])
+      'INSERT INTO system_issues (hospital_id,report_date,resolved_date,category,description,priority,status,resolution,reported_by,received_by,resolved_by,system_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [nn(d.hospitalId), nd(d.reportDate), nd(d.resolvedDate), d.category, d.description, d.priority, d.status, d.resolution, d.reportedBy, d.receivedBy||'', d.resolvedBy||'', d.systemName||''])
     res.json({ id: r.insertId, ...d })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
@@ -318,8 +319,8 @@ app.put('/api/system-issues/:id', async (req, res) => {
   try {
     const d = req.body
     await pool.query(
-      'UPDATE system_issues SET hospital_id=?,report_date=?,resolved_date=?,category=?,description=?,priority=?,status=?,resolution=?,reported_by=?,system_name=? WHERE id=?',
-      [nn(d.hospitalId), nd(d.reportDate), nd(d.resolvedDate), d.category, d.description, d.priority, d.status, d.resolution, d.reportedBy, d.systemName || '', req.params.id])
+      'UPDATE system_issues SET hospital_id=?,report_date=?,resolved_date=?,category=?,description=?,priority=?,status=?,resolution=?,reported_by=?,received_by=?,resolved_by=?,system_name=? WHERE id=?',
+      [nn(d.hospitalId), nd(d.reportDate), nd(d.resolvedDate), d.category, d.description, d.priority, d.status, d.resolution, d.reportedBy, d.receivedBy||'', d.resolvedBy||'', d.systemName||'', req.params.id])
     res.json({ id: Number(req.params.id), ...d })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
@@ -855,6 +856,14 @@ async function runMigrations() {
     {
       table: 'system_issues', column: 'system_name',
       sql: `ALTER TABLE system_issues ADD COLUMN system_name VARCHAR(200) NULL`,
+    },
+    {
+      table: 'system_issues', column: 'received_by',
+      sql: `ALTER TABLE system_issues ADD COLUMN received_by VARCHAR(200) NULL`,
+    },
+    {
+      table: 'system_issues', column: 'resolved_by',
+      sql: `ALTER TABLE system_issues ADD COLUMN resolved_by VARCHAR(200) NULL`,
     },
     {
       table: 'form_checklist_master', column: 'condition_text',
