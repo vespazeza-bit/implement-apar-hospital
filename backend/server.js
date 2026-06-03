@@ -2,6 +2,7 @@ const express = require('express')
 const mysql = require('mysql2/promise')
 const cors = require('cors')
 const path = require('path')
+const fs = require('fs')
 
 const app = express()
 app.use(cors())
@@ -1187,6 +1188,43 @@ async function runMigrations() {
     console.error('❌ Migration alter holiday_rules:', e.message)
   }
 
+  // hospcode reference table
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hospcode (
+        amppart char(2) NULL,
+        chwpart char(2) NULL,
+        hospcode varchar(9) NOT NULL DEFAULT '',
+        hosptype varchar(50) NULL,
+        name varchar(100) NULL,
+        tmbpart char(2) NULL,
+        moopart char(2) NULL,
+        sss_code varchar(12) NULL,
+        sss_code_sub varchar(12) NULL,
+        hospcode506 varchar(15) NULL,
+        hospital_type_id int NULL,
+        bed_count int NULL,
+        po_code varchar(5) NULL,
+        hospital_level_id int NULL,
+        hospital_phone varchar(50) NULL,
+        hospital_fax varchar(50) NULL,
+        hos_guid varchar(38) NULL,
+        hos_guid_ext varchar(64) NULL,
+        addrpart varchar(150) NULL,
+        area_code varchar(2) NULL,
+        province_name varchar(60) NULL,
+        region_id int NULL,
+        hospcode_5_digit varchar(9) NULL,
+        hospcode_9_digit varchar(9) NULL,
+        active_status char(1) NULL,
+        PRIMARY KEY (hospcode),
+        INDEX idx_name (name(30)),
+        INDEX idx_province (province_name(20))
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `)
+    console.log('✅ Migration: ตาราง hospcode พร้อมใช้งาน')
+  } catch (e) { console.error('❌ Migration hospcode:', e.message) }
+
   // standby_schedules
   try {
     await pool.query(`
@@ -1713,13 +1751,63 @@ app.get('/api/doc-tracking/summary', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── Hospcode search ──────────────────────────────────────────────────────────
+app.get('/api/hospcode/search', async (req, res) => {
+  const { q = '' } = req.query
+  if (!q.trim()) return res.json([])
+  try {
+    const like = `%${q.trim()}%`
+    const codeLike = `${q.trim()}%`
+    const [rows] = await pool.query(
+      `SELECT hospcode, name, province_name, bed_count, hosptype
+       FROM hospcode
+       WHERE (hospcode LIKE ? OR name LIKE ?)
+       ORDER BY CASE WHEN hospcode LIKE ? THEN 0 ELSE 1 END, hospcode
+       LIMIT 15`,
+      [codeLike, like, codeLike]
+    )
+    res.json(rows)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── SPA fallback (ต้องอยู่หลัง API routes ทั้งหมด) ──────────────────────────
 app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'))
 })
 
+// ─── Import hospcode data from SQL file (runs once in background) ─────────────
+async function importHospcodeIfEmpty() {
+  try {
+    const [[{ cnt }]] = await pool.query('SELECT COUNT(*) as cnt FROM hospcode')
+    if (Number(cnt) > 0) return
+    const sqlPath = path.join(__dirname, '../hospcode.sql')
+    if (!fs.existsSync(sqlPath)) { console.log('⚠️ hospcode.sql not found, skip import'); return }
+    console.log('📥 กำลัง import hospcode data (ครั้งแรก)...')
+    const lines = fs.readFileSync(sqlPath, 'utf8').split('\n')
+    const tuples = []
+    for (const line of lines) {
+      const t = line.trimStart()
+      if (!t.startsWith('INSERT INTO `hospcode` VALUES')) continue
+      const idx = t.indexOf(' VALUES ')
+      if (idx === -1) continue
+      let s = t.slice(idx + 8).trim()
+      if (s.endsWith(';')) s = s.slice(0, -1)
+      tuples.push(s.trim())
+    }
+    const BATCH = 1000
+    for (let i = 0; i < tuples.length; i += BATCH) {
+      const sql = `INSERT IGNORE INTO hospcode VALUES ${tuples.slice(i, i + BATCH).join(',')}`
+      await pool.query(sql)
+    }
+    console.log(`✅ Import hospcode สำเร็จ: ${tuples.length} รายการ`)
+  } catch (e) { console.error('❌ hospcode import error:', e.message) }
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001
 runMigrations().then(() => {
-  app.listen(PORT, () => console.log(`✅ API Server รันที่ port ${PORT}`))
+  app.listen(PORT, () => {
+    console.log(`✅ API Server รันที่ port ${PORT}`)
+    setImmediate(() => importHospcodeIfEmpty())
+  })
 })

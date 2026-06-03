@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../context/AppContext'
+
+const API = import.meta.env.VITE_API_URL || ''
 
 const HOSPITAL_TYPES = [
   { value: 'A', label: 'A – โรงพยาบาลศูนย์', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
@@ -28,6 +30,73 @@ function TypeBadge({ value }) {
     <span style={{ padding: '3px 10px', borderRadius: 20, background: t.bg, color: t.color, border: `1px solid ${t.border}`, fontSize: 12, fontWeight: 700 }}>
       {t.value}
     </span>
+  )
+}
+
+// ── Hospcode search input component ─────────────────────────────────────────
+function HospcodeSearch({ value, onChange, onSelect }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const debounce = useRef(null)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleChange = (e) => {
+    const v = e.target.value
+    onChange(v)
+    clearTimeout(debounce.current)
+    if (!v.trim()) { setSuggestions([]); setOpen(false); return }
+    debounce.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`${API}/api/hospcode/search?q=${encodeURIComponent(v)}`)
+        const data = await res.json()
+        setSuggestions(Array.isArray(data) ? data : [])
+        setOpen(true)
+      } catch { setSuggestions([]) }
+      finally { setLoading(false) }
+    }, 300)
+  }
+
+  const handleSelect = (item) => {
+    onSelect(item)
+    setSuggestions([])
+    setOpen(false)
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <input
+        value={value}
+        onChange={handleChange}
+        onFocus={() => value && suggestions.length && setOpen(true)}
+        placeholder="พิมพ์รหัส หรือ ชื่อสถานพยาบาล..."
+        style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', outline: 'none', background: '#fff' }}
+      />
+      {loading && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#94a3b8' }}>⏳</span>}
+      {open && suggestions.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1.5px solid #0891b2', borderRadius: 8, zIndex: 999, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', maxHeight: 260, overflowY: 'auto', marginTop: 2 }}>
+          {suggestions.map(s => (
+            <div key={s.hospcode} onMouseDown={() => handleSelect(s)}
+              style={{ padding: '9px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 10, alignItems: 'center' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0891b2', minWidth: 60 }}>{s.hospcode}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>{s.province_name}{s.bed_count ? ` · ${s.bed_count} เตียง` : ''}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -211,7 +280,12 @@ export default function Hospitals() {
                     </div>
                     <div>
                       <label style={L}>รหัสโรงพยาบาล</label>
-                      <input value={form.code} onChange={set('code')} placeholder="เช่น 10001" style={I} />
+                      <HospcodeSearch
+                        value={form.code}
+                        onChange={v => setForm(p => ({ ...p, code: v }))}
+                        onSelect={item => setForm(p => ({ ...p, code: item.hospcode, name: item.name || p.name, province: item.province_name ? item.province_name.replace(/^จ\./, '') : p.province }))}
+                      />
+                      {form.code && <div style={{ fontSize: 11, color: '#0891b2', marginTop: 3 }}>💡 พิมพ์รหัสหรือชื่อเพื่อค้นหาจาก hospcode</div>}
                     </div>
                     <div>
                       <label style={L}>ประเภทโรงพยาบาล</label>
