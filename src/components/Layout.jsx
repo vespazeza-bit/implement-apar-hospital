@@ -8,9 +8,14 @@ const MENU = [
   { path: '/workplan', icon: '📋', label: 'แผนการปฏิบัติงาน', sub: 'แผน + ความคืบหน้า' },
   { path: '/calendar', icon: '📅', label: 'ปฏิทินปฏิบัติงาน', sub: '' },
   { path: '/advance', icon: '⚙️', label: 'Advance', sub: 'เตรียมความพร้อม' },
-  { path: '/checklist-basic', icon: '🗂️', label: 'Check List', sub: 'ข้อมูลพื้นฐาน' },
-  { path: '/checklist-form', icon: '📄', label: 'Check List', sub: 'แบบฟอร์ม' },
-  { path: '/checklist-report', icon: '📈', label: 'Check List', sub: 'รายงาน' },
+  {
+    group: true, icon: '✅', label: 'Check List', sub: 'ตรวจสอบรายการ',
+    children: [
+      { path: '/checklist-basic', icon: '🗂️', label: 'ข้อมูลพื้นฐาน', sub: '' },
+      { path: '/checklist-form', icon: '📄', label: 'แบบฟอร์ม', sub: '' },
+      { path: '/checklist-report', icon: '📈', label: 'รายงาน', sub: '' },
+    ],
+  },
   {
     group: true, icon: '🐛', label: 'Issue', sub: 'สรุปปัญหา',
     children: [
