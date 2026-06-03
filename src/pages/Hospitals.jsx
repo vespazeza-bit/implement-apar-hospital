@@ -289,6 +289,7 @@ export default function Hospitals() {
                           name: item.name || p.name,
                           province: item.province_name ? item.province_name.replace(/^จ\./, '') : p.province,
                           address: item.addrpart || p.address,
+                          bedCount: item.bed_count != null ? String(item.bed_count) : p.bedCount,
                         }))}
                       />
                       {form.code && <div style={{ fontSize: 11, color: '#0891b2', marginTop: 3 }}>💡 พิมพ์รหัสหรือชื่อเพื่อค้นหาจาก hospcode</div>}
