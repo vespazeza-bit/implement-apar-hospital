@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import SearchableSelect from '../components/SearchableSelect'
+import * as XLSX from 'xlsx'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -26,7 +27,7 @@ const STATUS_OPT = [
   { value: 'closed', label: 'แก้ไขแล้ว', color: '#16a34a', bg: '#f0fdf4' },
 ]
 
-const EMPTY_FORM = { hospKey: '', hospitalId: '', date: '', resolvedDate: '', systemName: '', category: '', description: '', severity: 'medium', status: 'open', resolution: '', reportedBy: '' }
+const EMPTY_FORM = { hospKey: '', hospitalId: '', date: '', resolvedDate: '', systemName: '', category: '', description: '', severity: 'medium', status: 'open', resolution: '', reportedBy: '', receivedBy: '', resolvedBy: '' }
 
 const LAST_HOSP_KEY = 'lastTrainingIssueHosp'
 
@@ -201,6 +202,38 @@ export default function TrainingSummary() {
     setEditTypeVal('')
   }
 
+  const exportToExcel = () => {
+    const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+    const fmtBE = (d) => {
+      if (!d) return ''
+      const s = String(d).slice(0, 10)
+      if (!s.includes('-')) return ''
+      const [y, m, day] = s.split('-')
+      return `${parseInt(day)} ${THAI_MONTHS[parseInt(m)-1]} ${parseInt(y)+543}`
+    }
+    const headers = ['ลำดับ','วันที่รับปัญหา','หน่วยงาน','ปัญหา','กลุ่มปัญหา','สถานะ','วิธีการแก้ไข','ผู้แจ้งปัญหา','ผู้รับปัญหา','ผู้แก้ไข','วันที่แก้ไขปัญหา']
+    const rows = filtered.map((issue, idx) => [
+      idx + 1,
+      fmtBE(issue.date),
+      getHospName(issue.hospitalId),
+      issue.description || '',
+      issue.category || '',
+      STATUS_OPT.find(s => s.value === issue.status)?.label || issue.status || '',
+      issue.resolution || '',
+      issue.reportedBy || '',
+      issue.receivedBy || '',
+      issue.resolvedBy || '',
+      fmtBE(issue.resolvedDate),
+    ])
+    const wsData = [['ตารางสรุปปัญหาการอบรม AP/AR'], [], headers, ...rows]
+    const ws = XLSX.utils.aoa_to_sheet(wsData)
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }]
+    ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 24 }, { wch: 50 }, { wch: 16 }, { wch: 14 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 16 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'สรุปปัญหาอบรม')
+    XLSX.writeFile(wb, `training_issues_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
   const thStyle = { padding: '10px 14px', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#374151', background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap' }
   const tdStyle = { padding: '10px 14px', fontSize: 13, color: '#374151', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }
 
@@ -236,6 +269,10 @@ export default function TrainingSummary() {
           padding: '9px 16px', background: '#f8fafc', color: '#374151', border: '1.5px solid #e2e8f0',
           borderRadius: 8, fontSize: 13, cursor: 'pointer',
         }}>⚙️ กำหนดประเภทปัญหา</button>
+        <button onClick={exportToExcel} disabled={filtered.length === 0} style={{
+          padding: '9px 18px', background: filtered.length === 0 ? '#e2e8f0' : '#16a34a', color: filtered.length === 0 ? '#94a3b8' : '#fff',
+          border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: filtered.length === 0 ? 'default' : 'pointer', whiteSpace: 'nowrap',
+        }}>📥 Export Excel</button>
         <SearchableSelect value={filterHosp} onChange={setFilterHosp}
           options={hospitals.map(h => ({ value: String(h.id), label: h.name }))}
           allLabel="ทุก รพ." style={{ minWidth: 200 }} />
@@ -294,7 +331,13 @@ export default function TrainingSummary() {
                     </div>
                     <div style={{ fontWeight: 700, color: '#1e3a5f', fontSize: 14, marginBottom: 6 }}>🏥 {getHospName(issue.hospitalId)}</div>
                     <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{issue.description}</div>
-                    {issue.reportedBy && <div style={{ fontSize: 12, color: '#94a3b8' }}>👤 ผู้รายงาน: {issue.reportedBy}</div>}
+                    {(issue.reportedBy || issue.receivedBy || issue.resolvedBy) && (
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                        {issue.reportedBy && <span style={{ fontSize: 12, color: '#94a3b8' }}>👤 แจ้ง: {issue.reportedBy}</span>}
+                        {issue.receivedBy && <span style={{ fontSize: 12, color: '#94a3b8' }}>📥 รับ: {issue.receivedBy}</span>}
+                        {issue.resolvedBy && <span style={{ fontSize: 12, color: '#94a3b8' }}>🔧 แก้ไข: {issue.resolvedBy}</span>}
+                      </div>
+                    )}
                     {issue.resolution && (
                       <div style={{ fontSize: 13, color: '#16a34a', background: '#f0fdf4', padding: '8px 12px', borderRadius: 8, marginTop: 8 }}>
                         ✅ วิธีแก้ไข: {issue.resolution}
@@ -406,12 +449,14 @@ export default function TrainingSummary() {
                   { label: 'โรงพยาบาล / โครงการ *', type: 'hospSearch', key: 'hospKey', span2: true },
                   { label: 'วันที่พบปัญหา *', type: 'date', key: 'date' },
                   { label: 'วันที่แก้ไข', type: 'date', key: 'resolvedDate' },
-                  { label: 'ผู้รายงาน', type: 'select', key: 'reportedBy', options: (() => {
+                  { label: 'ผู้แจ้งปัญหา', type: 'select', key: 'reportedBy', options: (() => {
                     const opts = teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') }))
                     const me = getCurrentUserName()
                     if (me && !opts.some(o => o.value === me)) opts.unshift({ value: me, label: `${me} (ฉัน)` })
                     return opts
                   })(), nullable: true },
+                  { label: 'ผู้รับปัญหา', type: 'select', key: 'receivedBy', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
+                  { label: 'ผู้แก้ไข', type: 'select', key: 'resolvedBy', options: teamMembers.map(m => ({ value: m.name, label: m.name + (m.position ? ` (${m.position})` : '') })), nullable: true },
                   { label: 'ระบบงาน *', type: 'select', key: 'systemName', options: systemNames.map(s => ({ value: s, label: s })), nullable: true },
                   { label: 'ประเภทปัญหา *', type: 'select', key: 'category', options: issueTypes.map(t => ({ value: t, label: t })), nullable: true },
                   { label: 'ความรุนแรง', type: 'select', key: 'severity', options: SEVERITY.map(s => ({ value: s.value, label: s.label })) },
