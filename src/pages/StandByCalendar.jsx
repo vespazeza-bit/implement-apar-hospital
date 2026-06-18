@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import * as XLSX from 'xlsx'
+import DateInput from '../components/DateInput'
 
 const API = '/api'
 
@@ -222,15 +223,13 @@ function AddModal({ plan, plans, hospitals, onSave, onClose }) {
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 140 }}>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>วันเริ่มต้น</div>
-                    <input type="date" value={startDate} min={planStart || undefined} max={planEnd || undefined}
-                      onChange={e => setStartDate(e.target.value)}
+                    <DateInput value={startDate} onChange={v => setStartDate(v)}
                       style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
                   </div>
                   <span style={{ color: '#94a3b8', fontWeight: 700, paddingTop: 18 }}>—</span>
                   <div style={{ flex: 1, minWidth: 140 }}>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>วันสิ้นสุด</div>
-                    <input type="date" value={endDate} min={startDate || planStart || undefined} max={planEnd || undefined}
-                      onChange={e => setEndDate(e.target.value)}
+                    <DateInput value={endDate} onChange={v => setEndDate(v)}
                       style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
                   </div>
                 </div>

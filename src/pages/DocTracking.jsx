@@ -1,20 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import * as XLSX from 'xlsx'
+import DateInput from '../components/DateInput'
 
 const API = '/api'
 
 const STATUS = {
-  sent:     { label: 'ส่งแล้ว',    color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
-  review:   { label: 'รอตรวจ',     color: '#d97706', bg: '#fffbeb', border: '#fcd34d' },
-  pending:  { label: 'ค้างส่ง',    color: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
-  secret:   { label: 'ติดลับ',     color: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
-  leave:    { label: 'ลากา',       color: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
-  resigned: { label: 'ถอนทีม',     color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' },
-  holiday:  { label: 'วันหยุด',    color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
-  not_sent: { label: 'ยังไม่ส่ง',  color: '#94a3b8', bg: '#f8fafc', border: '#e2e8f0' },
+  sent:     { label: 'ส่งแล้ว',         color: '#16a34a', bg: '#f0fdf4', border: '#86efac' },
+  not_sent: { label: 'ยังไม่ส่ง',       color: '#94a3b8', bg: '#f8fafc', border: '#e2e8f0' },
+  resigned: { label: 'ถอนทีม',          color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' },
+  not_live: { label: 'ยังไม่ขึ้นระบบ',  color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  leave:    { label: 'ลา',              color: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  holiday:  { label: 'วันหยุด',         color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+  // ── backward compat (ไม่แสดงใน dropdown แต่ยังแสดงผลได้) ──
+  review:   { label: 'รอตรวจ',          color: '#d97706', bg: '#fffbeb', border: '#fcd34d' },
+  pending:  { label: 'ค้างส่ง',         color: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
+  secret:   { label: 'ติดลับ',          color: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
 }
-const SELECTABLE = ['sent', 'review', 'pending', 'secret', 'leave', 'resigned', 'not_sent']
+const SELECTABLE = ['sent', 'not_sent', 'resigned', 'not_live', 'leave', 'holiday']
 
 const THAI_DAYS   = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
@@ -189,6 +192,7 @@ function AddModal({ plans, hospitals, onSave, onClose }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function DocTracking() {
   const today = new Date()
+  const todayISO = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
   const { projectPlans, hospitals } = useApp()
 
   const [view, setView]             = useState('list')
@@ -204,8 +208,8 @@ export default function DocTracking() {
   const [holidays, setHolidays]     = useState(new Set())
   const [standbyDates, setStandbyDates]     = useState([])
   const [standbyLoading, setStandbyLoading] = useState(false)
-  const [filterDateStart, setFilterDateStart] = useState('')
-  const [filterDateEnd, setFilterDateEnd]     = useState('')
+  const [filterDateStart, setFilterDateStart] = useState(todayISO)
+  const [filterDateEnd, setFilterDateEnd]     = useState(todayISO)
   const [filterMember, setFilterMember]       = useState('')
   const [page, setPage]             = useState(1)
   const PAGE_SIZE = 20
@@ -454,7 +458,7 @@ export default function DocTracking() {
                     <th style={{ padding:'11px 12px', color:'#e2e8f0', fontSize:12, fontWeight:700, textAlign:'center', whiteSpace:'nowrap' }}>ช่วงเวลา</th>
                     <th style={{ padding:'11px 12px', color:'#e2e8f0', fontSize:12, fontWeight:700, textAlign:'center' }}>ทีม</th>
                     <th style={{ padding:'11px 10px', color:STATUS.sent.color, background:STATUS.sent.bg, fontSize:12, fontWeight:700, textAlign:'center', minWidth:70, whiteSpace:'nowrap' }}>ส่งแล้ว</th>
-                    <th style={{ padding:'11px 10px', color:STATUS.pending.color, background:STATUS.pending.bg, fontSize:12, fontWeight:700, textAlign:'center', minWidth:70, whiteSpace:'nowrap' }}>ค้างส่ง</th>
+                    <th style={{ padding:'11px 10px', color:STATUS.not_sent.color, background:STATUS.not_sent.bg, fontSize:12, fontWeight:700, textAlign:'center', minWidth:70, whiteSpace:'nowrap' }}>ยังไม่ส่ง</th>
                     <th style={{ padding:'11px 10px', color:'#60a5fa', fontSize:12, fontWeight:700, textAlign:'center', minWidth:70 }}>คืบหน้า</th>
                     <th style={{ padding:'11px 14px', color:'#e2e8f0', fontSize:12, fontWeight:700, textAlign:'center', width:150 }}>จัดการ</th>
                   </tr>
@@ -493,7 +497,7 @@ export default function DocTracking() {
                         <td style={{ padding:'11px 8px', textAlign:'center', fontWeight: sentCnt>0?700:400, color: sentCnt>0?STATUS.sent.color:'#d1d5db', background: sentCnt>0?STATUS.sent.bg:'transparent', borderLeft:'1px solid #f1f5f9' }}>
                           {sentCnt > 0 ? sentCnt : '—'}
                         </td>
-                        <td style={{ padding:'11px 8px', textAlign:'center', fontWeight: pendCnt>0?700:400, color: pendCnt>0?STATUS.pending.color:'#d1d5db', background: pendCnt>0?STATUS.pending.bg:'transparent', borderLeft:'1px solid #f1f5f9' }}>
+                        <td style={{ padding:'11px 8px', textAlign:'center', fontWeight: pendCnt>0?700:400, color: pendCnt>0?STATUS.not_sent.color:'#d1d5db', background: pendCnt>0?STATUS.not_sent.bg:'transparent', borderLeft:'1px solid #f1f5f9' }}>
                           {pendCnt > 0 ? pendCnt : '—'}
                         </td>
                         <td style={{ padding:'11px 8px', textAlign:'center', borderLeft:'1px solid #f1f5f9' }}>
@@ -525,7 +529,7 @@ export default function DocTracking() {
             <div style={{ padding:'10px 20px', background:'#f8fafc', borderTop:'1px solid #f1f5f9', display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
               <span style={{ fontSize:12, color:'#64748b' }}>ติดตามแล้ว <strong style={{ color:'#16a34a' }}>{Object.keys(planSummaries).length}</strong> โครงการ</span>
               <div style={{ marginLeft:'auto', display:'flex', gap:10, flexWrap:'wrap' }}>
-                {Object.entries(STATUS).filter(([k]) => k !== 'not_sent').map(([k, s]) => (
+                {Object.entries(STATUS).filter(([k]) => SELECTABLE.includes(k)).map(([k, s]) => (
                   <span key={k} style={{ display:'flex', alignItems:'center', gap:4, fontSize:11 }}>
                     <span style={{ width:14, height:14, background:s.bg, border:`1px solid ${s.border}`, borderRadius:3, display:'inline-block' }} />
                     <span style={{ color:'#374151' }}>{s.label}</span>
@@ -568,7 +572,7 @@ export default function DocTracking() {
               {[
                 { label:'Stand By',  val: standbyLoading ? '⏳' : `${standbyDates.length} วัน`, color:'#0891b2' },
                 { label:'ส่งแล้ว',  val: sentCnt, color: STATUS.sent.color },
-                { label:'ค้างส่ง',  val: pendCnt, color: STATUS.pending.color },
+                { label:'ยังไม่ส่ง', val: pendCnt, color: STATUS.not_sent.color },
                 { label:'วันหยุด',  val: holCnt,  color: STATUS.holiday.color },
                 { label:'คืบหน้า',  val: `${pct}%`, color: pct===100?'#16a34a':'#0891b2' },
               ].map(item => (
@@ -615,13 +619,11 @@ export default function DocTracking() {
             <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e2e8f0', padding:'12px 16px', marginBottom:16, display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
               <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
                 <span style={{ fontSize:12, color:'#64748b', fontWeight:600 }}>ช่วงวันที่</span>
-                <input type="date" value={filterDateStart} onChange={e => { setFilterDateStart(e.target.value); setPage(1) }}
-                  min={planStart} max={planEnd}
-                  style={{ padding:'7px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:12 }} />
+                <DateInput value={filterDateStart} onChange={v => { setFilterDateStart(v); setPage(1) }}
+                  style={{ padding:'7px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:12, width:130 }} />
                 <span style={{ color:'#94a3b8' }}>—</span>
-                <input type="date" value={filterDateEnd} onChange={e => { setFilterDateEnd(e.target.value); setPage(1) }}
-                  min={filterDateStart||planStart} max={planEnd}
-                  style={{ padding:'7px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:12 }} />
+                <DateInput value={filterDateEnd} onChange={v => { setFilterDateEnd(v); setPage(1) }}
+                  style={{ padding:'7px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:12, width:130 }} />
                 {(filterDateStart||filterDateEnd) && (
                   <button onClick={() => { setFilterDateStart(''); setFilterDateEnd(''); setPage(1) }}
                     style={{ padding:'7px 10px', background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, fontSize:12, cursor:'pointer', color:'#64748b' }}>✕</button>

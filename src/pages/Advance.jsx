@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext'
 import { api } from '../api'
 import DateInput from '../components/DateInput'
 
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
+
 const ADV_STATUS = [
   { value: 'pending',         label: 'ยังไม่ดำเนินการ', color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' },
   { value: 'waiting_approve', label: 'รออนุมัติ',        color: '#ca8a04', bg: '#fefce8', border: '#fde047' },
@@ -57,8 +59,8 @@ export default function Advance() {
   const [newDoc, setNewDoc] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterInstallType, setFilterInstallType] = useState('')
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState(todayISO())
+  const [filterDateTo, setFilterDateTo] = useState(todayISO())
   const [filterYear, setFilterYear] = useState(String(new Date().getFullYear() + 543))
   const [limit, setLimit] = useState(30)
 

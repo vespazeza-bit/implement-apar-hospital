@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { loadIssueTypes } from './TrainingSummary'
 import SearchableSelect from '../components/SearchableSelect'
+import DateInput from '../components/DateInput'
 import * as XLSX from 'xlsx'
 
 const API = import.meta.env.VITE_API_URL || ''
@@ -34,7 +35,7 @@ const formatDate = (d) => {
   return `${day}/${m}/${y}`
 }
 const toDateStr = (d) => d ? String(d).slice(0, 10) : ''
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 const getCurrentUserName = () => {
   try {
     const u = JSON.parse(localStorage.getItem('currentUser') || '{}')
@@ -50,8 +51,8 @@ export default function SystemSummary() {
   const [filterHosp, setFilterHosp] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState(todayStr())
+  const [filterDateTo, setFilterDateTo] = useState(todayStr())
   const [limit, setLimit] = useState(30)
 
   // Build รพ./โครงการ options (UI only — value carries hospitalId)
@@ -222,11 +223,11 @@ export default function SystemSummary() {
           allLabel="ทุก รพ." style={{ minWidth: 200 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 12, color: '#64748b' }}>พบปัญหา:</span>
-          <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
-            style={{ padding: '7px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
+          <DateInput value={filterDateFrom} onChange={v => setFilterDateFrom(v)}
+            style={{ padding: '7px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, width: 130 }} />
           <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
-          <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
-            style={{ padding: '7px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
+          <DateInput value={filterDateTo} onChange={v => setFilterDateTo(v)}
+            style={{ padding: '7px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, width: 130 }} />
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '8px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
           <option value="">ทุกสถานะ</option>
@@ -343,6 +344,8 @@ export default function SystemSummary() {
                         {f.nullable && <option value="">-- เลือก --</option>}
                         {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
+                    ) : f.type === 'date' ? (
+                      <DateInput value={form[f.key]} onChange={v => setForm(p => ({ ...p, [f.key]: v }))} style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
                     ) : (
                       <input type={f.type} value={form[f.key]} onChange={set(f.key)} placeholder={f.placeholder}
                         style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />

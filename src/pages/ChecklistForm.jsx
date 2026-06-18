@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import { api } from '../api'
+import * as XLSX from 'xlsx'
 const SYS_KEY = 'basicSystemNames'
 const PAPER_SIZES = ['A4', 'A5']
 const EMPTY_MASTER = { systemName: '', formName: '', printName: '', paperSize: 'A4', parameter: '', condition: '', sortOrder: '' }
@@ -202,6 +203,35 @@ export default function ChecklistForm() {
   }
   const filteredMaster = filterSystem ? formMasterItems.filter(i => i.systemName === filterSystem) : formMasterItems
 
+  // ── Export Excel ──────────────────────────────────────────────────────────
+  const exportToExcel = () => {
+    const hospObj = hospitals.find(h => String(h.id) === String(checkHosp))
+    const hospName = hospObj?.name || `รพ. #${checkHosp}`
+    const title = `ตาราง Check List แบบฟอร์ม AP/AR - ${hospName}`
+    const headers = ['ลำดับ', 'ระบบงาน', 'ชื่อแบบฟอร์ม', 'ชื่อพิมพ์', 'ขนาดกระดาษ', 'ผู้รับผิดชอบ', 'สถานะ']
+    const rows = []
+    let seq = 1
+    sortedSystems.forEach(sysName => {
+      const items = groupedEntries[sysName] || []
+      items.forEach(entry => {
+        rows.push([
+          seq++,
+          entry.systemName || '',
+          entry.formName || '',
+          entry.printName || '',
+          entry.paperSize || '',
+          entry.assignedTo || '',
+          statusMeta(entry.status).label,
+        ])
+      })
+    })
+    const ws = XLSX.utils.aoa_to_sheet([[title], [], headers, ...rows])
+    ws['!cols'] = [{ wch: 6 }, { wch: 20 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 22 }, { wch: 16 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Check List แบบฟอร์ม')
+    XLSX.writeFile(wb, `checklist_form_${hospName}_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
   return (
     <div>
       <div style={{ marginBottom: 20 }}>
@@ -371,6 +401,12 @@ export default function ChecklistForm() {
                       padding: '9px 20px', background: '#1e3a5f', color: '#fff', border: 'none',
                       borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
                     }}>+ เพิ่ม / นำเข้ารายการ</button>
+                    {entries.length > 0 && (
+                      <button onClick={exportToExcel} style={{
+                        padding: '9px 20px', background: '#16a34a', color: '#fff', border: 'none',
+                        borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                      }}>📥 Export Excel</button>
+                    )}
                   </div>
 
                   {loadingEntries ? (
