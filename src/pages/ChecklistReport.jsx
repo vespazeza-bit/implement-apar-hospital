@@ -43,6 +43,7 @@ export default function ChecklistReport() {
   const [showImport, setShowImport] = useState(false)
   const [importHosp, setImportHosp] = useState('')
   const [importRows, setImportRows] = useState([])
+  const [selectedMasterIds, setSelectedMasterIds] = useState(new Set())
   const [saving, setSaving] = useState(false)
   const [clView, setClView] = useState('list')
   const [hospSummaries, setHospSummaries] = useState([])
@@ -123,6 +124,7 @@ export default function ChecklistReport() {
       return { masterId: m.id, systemName: m.systemName, reportName: m.reportName, printName: m.printName, status: existing?.status || 'waiting_form', assignedTo: existing?.assignedTo || '' }
     })
     setImportRows(rows)
+    setSelectedMasterIds(new Set(rows.map(r => r.masterId)))
     setShowImport(true)
   }
 
@@ -133,13 +135,27 @@ export default function ChecklistReport() {
         return { masterId: m.id, systemName: m.systemName, reportName: m.reportName, printName: m.printName, status: ex?.status || 'waiting_form', assignedTo: ex?.assignedTo || '' }
       })
       setImportRows(rows)
+      setSelectedMasterIds(new Set(rows.map(r => r.masterId)))
     })
   }
 
   const handleImportHospChange = (hospId) => {
     setImportHosp(hospId)
     if (hospId) loadImportRows(hospId)
-    else setImportRows(reportMasterItems.map(m => ({ masterId: m.id, systemName: m.systemName, reportName: m.reportName, printName: m.printName, status: 'waiting_form', assignedTo: '' })))
+    else {
+      const rows = reportMasterItems.map(m => ({ masterId: m.id, systemName: m.systemName, reportName: m.reportName, printName: m.printName, status: 'waiting_form', assignedTo: '' }))
+      setImportRows(rows)
+      setSelectedMasterIds(new Set(rows.map(r => r.masterId)))
+    }
+  }
+
+  const toggleSelectMaster = (masterId) => {
+    setSelectedMasterIds(prev => {
+      const next = new Set(prev)
+      if (next.has(masterId)) next.delete(masterId)
+      else next.add(masterId)
+      return next
+    })
   }
 
   const setRowField = (idx, field, value) => {
@@ -148,10 +164,11 @@ export default function ChecklistReport() {
 
   const handleImportSave = async () => {
     if (!importHosp) return alert('กรุณาเลือกโรงพยาบาล')
-    if (!importRows.length) return alert('ไม่มีรายการจากกำหนดข้อมูลรายงาน')
+    const selectedRows = importRows.filter(r => selectedMasterIds.has(r.masterId))
+    if (!selectedRows.length) return alert('กรุณาเลือกอย่างน้อย 1 รายการ')
     setSaving(true)
     try {
-      await api.post('/report-entries/import', { hospitalId: importHosp, items: importRows })
+      await api.post('/report-entries/import', { hospitalId: importHosp, items: selectedRows })
       setShowImport(false)
       await loadHospSummaries()
       setCheckHosp(importHosp)
@@ -659,58 +676,98 @@ export default function ChecklistReport() {
                   {reportMasterItems.length === 0 ? 'ยังไม่มีรายการจากกำหนดข้อมูลรายงาน' : 'เลือกโรงพยาบาลเพื่อโหลดรายการ'}
                 </div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...thS, width: 36, textAlign: 'center' }}>#</th>
-                      <th style={thS}>ระบบงาน</th>
-                      <th style={thS}>ชื่อรายงาน</th>
-                      <th style={thS}>ชื่อพิมพ์</th>
-                      <th style={{ ...thS, width: 180 }}>ผู้รับผิดชอบ</th>
-                      <th style={{ ...thS, width: 180 }}>สถานะ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importRows.map((row, idx) => (
-                      <tr key={row.masterId} style={{ background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
-                        <td style={{ ...tdS, textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>{idx + 1}</td>
-                        <td style={tdS}>
-                          <span style={{ padding: '2px 8px', borderRadius: 12, background: '#eff6ff', color: '#1d4ed8', fontSize: 11, fontWeight: 600 }}>{row.systemName || '–'}</span>
-                        </td>
-                        <td style={{ ...tdS, fontWeight: 500 }}>{row.reportName}</td>
-                        <td style={{ ...tdS, color: '#64748b', fontSize: 12 }}>{row.printName || '–'}</td>
-                        <td style={tdS}>
-                          <select value={row.assignedTo} onChange={e => setRowField(idx, 'assignedTo', e.target.value)}
-                            style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 12, background: '#f8fafc' }}>
-                            <option value="">-- เลือก --</option>
-                            {teamMembers.map(m => <option key={m.id} value={m.name}>{m.name}{m.position ? ` (${m.position})` : ''}</option>)}
-                          </select>
-                        </td>
-                        <td style={tdS}>
-                          <select value={row.status} onChange={e => setRowField(idx, 'status', e.target.value)}
-                            style={{
-                              width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                              border: `1.5px solid ${statusMeta(row.status).color}55`,
-                              background: statusMeta(row.status).bg,
-                              color: statusMeta(row.status).color, cursor: 'pointer',
-                            }}>
-                            {STATUS_OPTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                          </select>
-                        </td>
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0 8px' }}>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>
+                      เลือกแล้ว{' '}
+                      <strong style={{ color: selectedMasterIds.size > 0 ? '#0891b2' : '#94a3b8' }}>{selectedMasterIds.size}</strong>
+                      {' '}จาก <strong>{importRows.length}</strong> รายการ
+                    </span>
+                    {selectedMasterIds.size > 0 && selectedMasterIds.size < importRows.length && (
+                      <button onClick={() => setSelectedMasterIds(new Set(importRows.map(r => r.masterId)))}
+                        style={{ padding: '3px 10px', background: '#eff6ff', color: '#0891b2', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
+                        เลือกทั้งหมด
+                      </button>
+                    )}
+                    {selectedMasterIds.size > 0 && (
+                      <button onClick={() => setSelectedMasterIds(new Set())}
+                        style={{ padding: '3px 10px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
+                        ยกเลิกทั้งหมด
+                      </button>
+                    )}
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...thS, width: 42, textAlign: 'center' }}>
+                          <input type="checkbox"
+                            checked={importRows.length > 0 && selectedMasterIds.size === importRows.length}
+                            ref={el => { if (el) el.indeterminate = selectedMasterIds.size > 0 && selectedMasterIds.size < importRows.length }}
+                            onChange={e => setSelectedMasterIds(e.target.checked ? new Set(importRows.map(r => r.masterId)) : new Set())}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#0891b2' }} />
+                        </th>
+                        <th style={{ ...thS, width: 36, textAlign: 'center' }}>#</th>
+                        <th style={thS}>ระบบงาน</th>
+                        <th style={thS}>ชื่อรายงาน</th>
+                        <th style={thS}>ชื่อพิมพ์</th>
+                        <th style={{ ...thS, width: 180 }}>ผู้รับผิดชอบ</th>
+                        <th style={{ ...thS, width: 180 }}>สถานะ</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {importRows.map((row, idx) => {
+                        const checked = selectedMasterIds.has(row.masterId)
+                        return (
+                          <tr key={row.masterId} style={{ background: checked ? (idx % 2 === 0 ? '#fff' : '#fafafa') : '#f8fafc', opacity: checked ? 1 : 0.45 }}>
+                            <td style={{ ...tdS, textAlign: 'center' }}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleSelectMaster(row.masterId)}
+                                style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#0891b2' }} />
+                            </td>
+                            <td style={{ ...tdS, textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>{idx + 1}</td>
+                            <td style={tdS}>
+                              <span style={{ padding: '2px 8px', borderRadius: 12, background: '#eff6ff', color: '#1d4ed8', fontSize: 11, fontWeight: 600 }}>{row.systemName || '–'}</span>
+                            </td>
+                            <td style={{ ...tdS, fontWeight: 500 }}>{row.reportName}</td>
+                            <td style={{ ...tdS, color: '#64748b', fontSize: 12 }}>{row.printName || '–'}</td>
+                            <td style={tdS}>
+                              <select value={row.assignedTo} onChange={e => setRowField(idx, 'assignedTo', e.target.value)} disabled={!checked}
+                                style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 12, background: '#f8fafc' }}>
+                                <option value="">-- เลือก --</option>
+                                {teamMembers.map(m => <option key={m.id} value={m.name}>{m.name}{m.position ? ` (${m.position})` : ''}</option>)}
+                              </select>
+                            </td>
+                            <td style={tdS}>
+                              <select value={row.status} onChange={e => setRowField(idx, 'status', e.target.value)} disabled={!checked}
+                                style={{
+                                  width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                                  border: `1.5px solid ${statusMeta(row.status).color}55`,
+                                  background: statusMeta(row.status).bg,
+                                  color: statusMeta(row.status).color, cursor: checked ? 'pointer' : 'default',
+                                }}>
+                                {STATUS_OPTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
 
-            <div style={{ padding: '16px 28px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div style={{ padding: '16px 28px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+              {selectedMasterIds.size > 0 && importRows.length > 0 && (
+                <span style={{ fontSize: 13, color: '#64748b', marginRight: 'auto' }}>
+                  จะบันทึก <strong style={{ color: '#0891b2' }}>{selectedMasterIds.size}</strong> รายการ
+                </span>
+              )}
               <button onClick={() => setShowImport(false)} style={{ padding: '10px 24px', background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={handleImportSave} disabled={saving || !importHosp || !importRows.length} style={{
-                padding: '10px 28px', background: saving ? '#94a3b8' : '#1e3a5f', color: '#fff', border: 'none',
-                borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+              <button onClick={handleImportSave} disabled={saving || !importHosp || selectedMasterIds.size === 0} style={{
+                padding: '10px 28px', background: (saving || !importHosp || selectedMasterIds.size === 0) ? '#94a3b8' : '#1e3a5f', color: '#fff', border: 'none',
+                borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: (saving || !importHosp || selectedMasterIds.size === 0) ? 'not-allowed' : 'pointer',
               }}>
-                {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                {saving ? 'กำลังบันทึก...' : `💾 บันทึก${selectedMasterIds.size > 0 ? ` (${selectedMasterIds.size})` : ''}`}
               </button>
             </div>
           </div>

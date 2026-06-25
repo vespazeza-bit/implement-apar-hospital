@@ -152,7 +152,8 @@ export default function SystemSummary() {
 
   const getHospName = (id) => hospitals.find(h => String(h.id) === String(id))?.name || id
 
-  const counts = STATUS_OPT.reduce((acc, s) => ({ ...acc, [s.value]: systemIssues.filter(i => i.status === s.value).length }), {})
+  const isFiltered = !!(filterHosp || filterStatus || filterCategory || filterDateFrom || filterDateTo)
+  const counts = STATUS_OPT.reduce((acc, s) => ({ ...acc, [s.value]: filtered.filter(i => i.status === s.value).length }), {})
 
   const exportToExcel = () => {
     const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
@@ -195,17 +196,26 @@ export default function SystemSummary() {
       </div>
 
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <div style={{ background: '#eff6ff', borderRadius: 10, padding: '14px 18px', border: '1px solid #bfdbfe' }}>
-          <div style={{ fontSize: 26, fontWeight: 700, color: '#1e3a5f' }}>{systemIssues.length}</div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>ทั้งหมด</div>
-        </div>
-        {STATUS_OPT.map(s => (
-          <div key={s.value} style={{ background: s.bg, borderRadius: 10, padding: '14px 18px', border: `1px solid ${s.color}33` }}>
-            <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>{counts[s.value] || 0}</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>{s.label}</div>
+      <div style={{ marginBottom: 24 }}>
+        {isFiltered && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#0891b2', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 20, padding: '3px 12px' }}>
+              🔍 ผลการกรอง — แสดง {filtered.length} จาก {systemIssues.length} รายการ
+            </span>
           </div>
-        ))}
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+          <div style={{ background: '#eff6ff', borderRadius: 10, padding: '14px 18px', border: '1px solid #bfdbfe' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: '#1e3a5f' }}>{filtered.length}</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>{isFiltered ? 'ผลที่กรอง' : 'ทั้งหมด'}</div>
+          </div>
+          {STATUS_OPT.map(s => (
+            <div key={s.value} style={{ background: s.bg, borderRadius: 10, padding: '14px 18px', border: `1px solid ${s.color}33` }}>
+              <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>{counts[s.value] || 0}</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Toolbar */}

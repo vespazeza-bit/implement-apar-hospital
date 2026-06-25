@@ -6,8 +6,8 @@ import * as XLSX from 'xlsx'
 
 const API = import.meta.env.VITE_API_URL || ''
 
-export const DEFAULT_ISSUE_TYPES = ['ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน', 'การใช้งานระบบ', 'อื่นๆ']
-export const ISSUE_TYPES_KEY = 'sharedIssueTypes'
+export const DEFAULT_ISSUE_TYPES = ['ข้อมูลพื้นฐาน', 'แบบฟอร์ม', 'รายงาน', 'กระบวนการ', 'โปรแกรม', 'Network', 'Hardware']
+export const ISSUE_TYPES_KEY = 'sharedIssueTypes_v2'
 
 export const loadIssueTypes = () => {
   try {
@@ -163,10 +163,12 @@ export default function TrainingSummary() {
 
   const getHospName = (id) => hospitals.find(h => String(h.id) === String(id))?.name || id
 
+  const isFiltered = !!(filterHosp || filterStatus || filterCategory || filterDateFrom || filterDateTo)
+
   const counts = {
-    open: trainingIssues.filter(i => i.status === 'open').length,
-    inprogress: trainingIssues.filter(i => i.status === 'inprogress').length,
-    closed: trainingIssues.filter(i => i.status === 'closed').length,
+    open: filtered.filter(i => i.status === 'open').length,
+    inprogress: filtered.filter(i => i.status === 'inprogress').length,
+    closed: filtered.filter(i => i.status === 'closed').length,
   }
 
   // Issue type CRUD
@@ -246,18 +248,27 @@ export default function TrainingSummary() {
       </div>
 
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 24 }}>
-        {[
-          { label: 'ทั้งหมด', value: trainingIssues.length, color: '#1e3a5f', bg: '#eff6ff' },
-          { label: 'รอแก้ไข', value: counts.open, color: '#d97706', bg: '#fffbeb' },
-          { label: 'กำลังแก้ไข', value: counts.inprogress, color: '#0891b2', bg: '#eff6ff' },
-          { label: 'แก้ไขแล้ว', value: counts.closed, color: '#16a34a', bg: '#f0fdf4' },
-        ].map(s => (
-          <div key={s.label} style={{ background: s.bg, borderRadius: 10, padding: '16px 20px', border: `1px solid ${s.color}22` }}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: s.color }}>{s.value}</div>
-            <div style={{ fontSize: 13, color: '#64748b' }}>{s.label}</div>
+      <div style={{ marginBottom: 24 }}>
+        {isFiltered && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#0891b2', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 20, padding: '3px 12px' }}>
+              🔍 ผลการกรอง — แสดง {filtered.length} จาก {trainingIssues.length} รายการ
+            </span>
           </div>
-        ))}
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
+          {[
+            { label: isFiltered ? 'ผลที่กรอง' : 'ทั้งหมด', value: filtered.length, color: '#1e3a5f', bg: '#eff6ff' },
+            { label: 'รอแก้ไข', value: counts.open, color: '#d97706', bg: '#fffbeb' },
+            { label: 'กำลังแก้ไข', value: counts.inprogress, color: '#0891b2', bg: '#eff6ff' },
+            { label: 'แก้ไขแล้ว', value: counts.closed, color: '#16a34a', bg: '#f0fdf4' },
+          ].map(s => (
+            <div key={s.label} style={{ background: s.bg, borderRadius: 10, padding: '16px 20px', border: `1px solid ${s.color}22` }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 13, color: '#64748b' }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Toolbar */}
