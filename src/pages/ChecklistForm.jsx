@@ -189,6 +189,13 @@ export default function ChecklistForm() {
     if (field === 'status') loadHospSummaries()
   }
 
+  const deleteEntry = async (entryId, formName) => {
+    if (!window.confirm(`ลบ "${formName}" ออกจาก check list ?`)) return
+    await api.del(`/form-entries/${entryId}`)
+    setEntries(prev => prev.filter(e => e.id !== entryId))
+    loadHospSummaries()
+  }
+
   // ── Group entries by systemName ───────────────────────────────────────────
   const groupedEntries = entries.reduce((acc, e) => {
     const key = e.systemName || 'ไม่ระบุระบบ'
@@ -508,11 +515,12 @@ export default function ChecklistForm() {
                           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                               <tr>
-                                <th style={{ ...thS, width: '18%' }}>ระบบงาน</th>
-                                <th style={{ ...thS, width: '22%' }}>ชื่อแบบฟอร์ม</th>
-                                <th style={{ ...thS, width: '20%' }}>ชื่อพิมพ์</th>
+                                <th style={{ ...thS, width: '16%' }}>ระบบงาน</th>
+                                <th style={{ ...thS, width: '20%' }}>ชื่อแบบฟอร์ม</th>
+                                <th style={{ ...thS, width: '18%' }}>ชื่อพิมพ์</th>
                                 <th style={{ ...thS, width: '18%' }}>ผู้รับผิดชอบ</th>
-                                <th style={{ ...thS, width: '22%' }}>สถานะ</th>
+                                <th style={{ ...thS, width: '20%' }}>สถานะ</th>
+                                <th style={{ ...thS, width: 80, textAlign: 'center' }}>จัดการ</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -548,6 +556,12 @@ export default function ChecklistForm() {
                                         }}>
                                         {STATUS_OPTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                                       </select>
+                                    </td>
+                                    <td style={{ ...tdS, textAlign: 'center' }}>
+                                      <button onClick={() => deleteEntry(entry.id, entry.formName)}
+                                        style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
+                                        ลบ
+                                      </button>
                                     </td>
                                   </tr>
                                 ))

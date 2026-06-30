@@ -568,6 +568,13 @@ app.put('/api/form-entries/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+app.delete('/api/form-entries/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM form_checklist_entries WHERE id=?', [req.params.id])
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── Report Checklist Master ──────────────────────────────────────────────────
 app.get('/api/report-master', async (req, res) => {
   try {
@@ -672,6 +679,13 @@ app.put('/api/report-entries/:id', async (req, res) => {
     await pool.query(
       'UPDATE report_checklist_entries SET status=?,assigned_to=?,note=? WHERE id=?',
       [status, assignedTo || '', note || '', req.params.id])
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/report-entries/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM report_checklist_entries WHERE id=?', [req.params.id])
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

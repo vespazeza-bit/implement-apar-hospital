@@ -536,7 +536,7 @@ export default function ChecklistBasic() {
                               <th style={{ ...thS, width: '24%' }}>ระบบงาน</th>
                               <th style={{ ...thS, width: '38%' }}>ข้อมูลพื้นฐาน</th>
                               <th style={{ ...thS, width: '22%' }}>สถานะ</th>
-                              <th style={{ ...thS, width: 130, textAlign: 'center' }}>จัดการ</th>
+                              <th style={{ ...thS, width: 80, textAlign: 'center' }}>จัดการ</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -571,16 +571,10 @@ export default function ChecklistBasic() {
                                     </select>
                                   </td>
                                   <td style={{ ...tdS, textAlign: 'center' }}>
-                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                                      <button
-                                        onClick={() => openEditModal(entry)}
-                                        style={{ padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-                                      >แก้ไข</button>
-                                      <button
-                                        onClick={() => deleteEntry(entry.id, entry.itemName)}
-                                        style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
-                                      >ลบ</button>
-                                    </div>
+                                    <button
+                                      onClick={() => deleteEntry(entry.id, entry.itemName)}
+                                      style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                                    >ลบ</button>
                                   </td>
                                 </tr>
                               ))
